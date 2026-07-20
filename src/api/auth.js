@@ -1,8 +1,11 @@
-import api from "./client";
+import api, { setCsrfToken, setSidToken, clearSessionTokens } from "./client";
 
 function getErrorMessage(error) {
   return (
-    error.response?.data?.message ||
+    error.response?.data?.message?.message ||
+    (typeof error.response?.data?.message === "string"
+      ? error.response.data.message
+      : null) ||
     error.response?.data?._error_message ||
     error.message ||
     "Something went wrong"
@@ -11,23 +14,57 @@ function getErrorMessage(error) {
 
 export async function login({ email, password }) {
   try {
-    // TODO: confirm path/body with Frappe backend
-    const { data } = await api.post("/api/method/login", {
+    const { data } = await api.post("/api/method/education.api.auth.login", {
       usr: email,
       pwd: password,
     });
+    if (data?.csrf_token) {
+      setCsrfToken(data.csrf_token);
+    }
+    if (data?.sid) {
+      setSidToken(data.sid);
+    }
     return data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
 }
 
+export async function me() {
+  try {
+    const { data } = await api.get("/api/method/education.api.auth.me");
+    if (data?.csrf_token) {
+      setCsrfToken(data.csrf_token);
+    }
+    if (data?.sid) {
+      setSidToken(data.sid);
+    }
+    return data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function logout() {
+  try {
+    const { data } = await api.post("/api/method/education.api.auth.logout");
+    clearSessionTokens();
+    return data;
+  } catch (error) {
+    clearSessionTokens();
+    throw new Error(getErrorMessage(error));
+  }
+}
+
 export async function forgotPassword({ email }) {
   try {
-    // TODO: replace with your Frappe method path
-    const { data } = await api.post("/api/method/forgot_password", {
-      email,
-    });
+    const { data } = await api.post(
+      "/api/method/education.api.auth.forgot_password",
+      {
+        user: email,
+        email,
+      }
+    );
     return data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -36,11 +73,13 @@ export async function forgotPassword({ email }) {
 
 export async function resetPassword({ key, newPassword }) {
   try {
-    // TODO: replace with your Frappe method path
-    const { data } = await api.post("/api/method/reset_password", {
-      key,
-      new_password: newPassword,
-    });
+    const { data } = await api.post(
+      "/api/method/education.api.auth.reset_password",
+      {
+        key,
+        new_password: newPassword,
+      }
+    );
     return data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -49,11 +88,13 @@ export async function resetPassword({ key, newPassword }) {
 
 export async function changePassword({ currentPassword, newPassword }) {
   try {
-    // TODO: replace with your Frappe method path
-    const { data } = await api.post("/api/method/update_password", {
-      old_password: currentPassword,
-      new_password: newPassword,
-    });
+    const { data } = await api.post(
+      "/api/method/education.api.auth.change_password",
+      {
+        old_password: currentPassword,
+        new_password: newPassword,
+      }
+    );
     return data;
   } catch (error) {
     throw new Error(getErrorMessage(error));

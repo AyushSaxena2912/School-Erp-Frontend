@@ -112,16 +112,28 @@ export const SIDEBAR_GROUPS = [
         icon: "classes",
         roles: [...ADMINS, "teacher"],
         children: [
-          { label: "Classes", to: cs("Classes"), roles: ADMINS },
-          { label: "Sections", to: cs("Sections"), roles: ADMINS },
-          { label: "Classrooms", to: cs("Classrooms"), roles: [...ADMINS, "teacher"] },
-          { label: "Subject", to: cs("Subject"), roles: ADMINS },
-          { label: "Syllabus", to: cs("Syllabus"), roles: [...ADMINS, "teacher"] },
+          { label: "Classes", to: "/front-office/academic/classes", roles: ADMINS },
+          { label: "Sections", to: "/front-office/academic/sections", roles: ADMINS },
+          {
+            label: "Classrooms",
+            to: "/front-office/academic/classrooms",
+            roles: [...ADMINS, "teacher"],
+          },
+          {
+            label: "Class Allocation",
+            to: "/front-office/academic/class-allocation",
+            roles: ADMINS,
+          },
+          { label: "Subject", to: "/front-office/academic/subjects", roles: ADMINS },
+          {
+            label: "Subject Allocation",
+            to: "/front-office/academic/subject-allocation",
+            roles: ADMINS,
+          },
         ],
       },
-      { label: "Class Allocation", to: cs("Class Allocation"), icon: "link", roles: ADMINS },
-      { label: "Class Routine", to: cs("Class Routine"), icon: "calendar", roles: [...ADMINS, "teacher"] },
-      { label: "Academic Calendar", to: cs("Academic Calendar"), icon: "table", roles: [...ADMINS, "teacher", "student"] },
+      { label: "Class Routine", to: "/front-office/academic/class-routine", icon: "calendar", roles: [...ADMINS, "teacher"] },
+      { label: "Academic Calendar", to: "/front-office/academic/calendar", icon: "table", roles: [...ADMINS, "teacher", "student"] },
       {
         label: "Home Work",
         icon: "homework",
@@ -247,7 +259,7 @@ export const SIDEBAR_GROUPS = [
     label: "Announcements",
     roles: [...ADMINS, "teacher", "student"],
     items: [
-      { label: "Notice Board", to: cs("Notice Board"), icon: "notice", roles: [...ADMINS, "teacher", "student"] },
+      { label: "Notice Board", to: "/front-office/announcements/notice-board", icon: "notice", roles: [...ADMINS, "teacher", "student"] },
     ],
   },
   {

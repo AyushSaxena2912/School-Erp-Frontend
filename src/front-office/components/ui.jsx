@@ -1,3 +1,5 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
 export function StatusBadge({ status }) {
   const map = {
     New: "bg-blue-50 text-blue-700",
@@ -64,7 +66,7 @@ export function Modal({ open, title, onClose, children, wide }) {
       />
       <div
         className={`relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-6 shadow-lg ${
-          wide ? "max-w-3xl" : "max-w-lg"
+          wide ? "max-w-5xl" : "max-w-lg"
         }`}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -72,9 +74,17 @@ export function Modal({ open, title, onClose, children, wide }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
           >
-            ✕
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
         {children}
@@ -120,6 +130,130 @@ export function Field({ label, required, error, hint, children, className }) {
       {hint ? <p className="mb-1.5 text-xs text-gray-500">{hint}</p> : null}
       {children}
       {error ? <p className="mt-1 text-sm text-red-500">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Searchable single-select. options: [{ value, label }]
+ */
+export function SearchSelect({
+  value,
+  onChange,
+  options = [],
+  placeholder = "Search…",
+  emptyText = "No matches",
+  allowClear = true,
+}) {
+  const rootRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selected = options.find((o) => o.value === value) || null;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        className={`${inputClass} flex w-full items-center justify-between gap-2 text-left`}
+        onClick={() => {
+          setOpen((v) => !v);
+          setQuery("");
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={selected ? "text-gray-900" : "text-gray-400"}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <svg
+          className="h-4 w-4 shrink-0 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+
+      {open ? (
+        <div className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+          <div className="border-b border-gray-100 p-2">
+            <input
+              className={inputClass}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Type to search…"
+              autoFocus
+            />
+          </div>
+          <ul className="max-h-48 overflow-y-auto py-1" role="listbox">
+            {allowClear && value ? (
+              <li>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                >
+                  Clear selection
+                </button>
+              </li>
+            ) : null}
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">{emptyText}</li>
+            ) : (
+              filtered.map((o) => (
+                <li key={o.value}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={o.value === value}
+                    className={`w-full px-3 py-2 text-left text-sm hover:bg-[var(--ac-green-light,#e6f4ee)] ${
+                      o.value === value
+                        ? "bg-[var(--ac-green-light,#e6f4ee)] font-medium text-[var(--ac-green,#1a7a4a)]"
+                        : "text-gray-800"
+                    }`}
+                    onClick={() => {
+                      onChange(o.value);
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

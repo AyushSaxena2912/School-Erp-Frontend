@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
 import { EyeIcon, EyeOffIcon } from "../../components/PasswordToggleIcon";
 
 const Login = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
@@ -17,7 +18,7 @@ const Login = () => {
     const newErrors = {};
 
     if (!email.trim()) {
-      newErrors.email = "Email is required.";
+      newErrors.email = "Email or username is required.";
     }
 
     if (!password.trim()) {
@@ -35,10 +36,9 @@ const Login = () => {
 
     try {
       await login({ email, password });
-      // TODO: after Frappe login — save session / redirect to dashboard
+      navigate("/front-office", { replace: true });
     } catch (err) {
       setApiError(err.message || "Login failed. Please try again.");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -58,13 +58,14 @@ const Login = () => {
             </p>
           )}
 
-          {/* Email */}
+          {/* Email / Username (Frappe accepts both, e.g. Administrator) */}
           <div>
-            <label className="mb-2 block font-medium">Email</label>
+            <label className="mb-2 block font-medium">Email or Username</label>
 
             <input
-              type="email"
-              placeholder="Enter your email"
+              type="text"
+              autoComplete="username"
+              placeholder="Enter email or username"
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -125,6 +126,14 @@ const Login = () => {
             className="w-full rounded-md bg-green-700 py-2 font-medium text-white hover:bg-green-800 disabled:opacity-60"
           >
             {isLoading ? "Logging in..." : "Login"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/front-office", { replace: true })}
+            className="w-full rounded-md border border-green-700 py-2 font-medium text-green-700 hover:bg-green-50"
+          >
+            Enter Front Office (Demo)
           </button>
 
           <Link

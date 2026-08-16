@@ -1,6 +1,10 @@
 import api, { setCsrfToken, setSidToken, clearSessionTokens } from "./client";
 
 function getErrorMessage(error) {
+  const excType = error.response?.data?.exc_type;
+  if (excType === "CSRFTokenError") {
+    return "Session expired. Please try logging in again.";
+  }
   return (
     error.response?.data?.message?.message ||
     (typeof error.response?.data?.message === "string"
@@ -12,8 +16,19 @@ function getErrorMessage(error) {
   );
 }
 
+/** Match CSRF header to the browser's sid cookie (avoids CSRFTokenError). */
+async function syncCsrfWithSession() {
+  clearSessionTokens();
+  try {
+    await api.get("/api/method/education.api.auth.me");
+  } catch {
+    // Guest / expired session — login can still proceed
+  }
+}
+
 export async function login({ email, password }) {
   try {
+    await syncCsrfWithSession();
     const { data } = await api.post("/api/method/education.api.auth.login", {
       usr: email,
       pwd: password,
@@ -58,6 +73,7 @@ export async function logout() {
 
 export async function forgotPassword({ email }) {
   try {
+    await syncCsrfWithSession();
     const { data } = await api.post(
       "/api/method/education.api.auth.forgot_password",
       {
@@ -73,6 +89,7 @@ export async function forgotPassword({ email }) {
 
 export async function resetPassword({ key, newPassword }) {
   try {
+    await syncCsrfWithSession();
     const { data } = await api.post(
       "/api/method/education.api.auth.reset_password",
       {

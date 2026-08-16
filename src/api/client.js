@@ -32,10 +32,8 @@ export function getSidToken() {
   return sidToken;
 }
 
-const API_URL =
-  import.meta.env.VITE_API_URL !== undefined
-    ? import.meta.env.VITE_API_URL
-    : "http://education.local:8002";
+// Empty = same-origin (Vite proxies /api → Frappe). Avoids browser CORS.
+const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 const DEFAULT_SITE = import.meta.env.VITE_FRAPPE_SITE || "education.local";
 
@@ -57,12 +55,26 @@ async function request(method, url, body) {
     headers["X-Frappe-CSRF-Token"] = csrfToken;
   }
 
-  const response = await fetch(`${API_URL}${url}`, {
-    method,
-    credentials: "include",
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  let response;
+  try {
+    response = await fetch(`${API_URL}${url}`, {
+      method,
+      credentials: "include",
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("Request timed out. Is the Frappe backend running?");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   let data = null;
   const text = await response.text();

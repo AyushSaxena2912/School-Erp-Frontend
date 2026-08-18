@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Field, Modal, inputClass, selectClass } from "../../components/ui";
 import { ROOM_TYPES } from "../data/academic";
 import { useAcademic } from "../context/AcademicContext";
@@ -18,18 +18,15 @@ function usePagedList(rows) {
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = rows.filter((r) => {
-      const hay = `${r.roomNo} ${r.roomType} ${r.capacity} ${r.status}`.toLowerCase();
+      const hay = `${r.roomNo} ${r.roomType} ${r.capacity}`.toLowerCase();
       const matchQ = !q || hay.includes(q);
-      const matchStatus =
-        statusFilter === "All" || r.status === statusFilter;
       const matchType = typeFilter === "All" || r.roomType === typeFilter;
-      return matchQ && matchStatus && matchType;
+      return matchQ && matchType;
     });
     list = [...list].sort((a, b) => {
       const cmp = String(a.roomNo).localeCompare(String(b.roomNo), undefined, {
@@ -38,7 +35,7 @@ function usePagedList(rows) {
       return sort === "az" ? cmp : -cmp;
     });
     return list;
-  }, [rows, search, sort, statusFilter, typeFilter]);
+  }, [rows, search, sort, typeFilter]);
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -66,11 +63,6 @@ function usePagedList(rows) {
     total,
     pageRows,
     selected,
-    statusFilter,
-    setStatusFilter: (v) => {
-      setStatusFilter(v);
-      setPage(1);
-    },
     typeFilter,
     setTypeFilter: (v) => {
       setTypeFilter(v);
@@ -91,7 +83,6 @@ const emptyForm = {
   roomNo: "",
   roomType: "Classroom",
   capacity: 40,
-  status: "Available",
 };
 
 export default function ClassroomsPage() {
@@ -105,6 +96,8 @@ export default function ClassroomsPage() {
   const [customRoomType, setCustomRoomType] = useState("");
   const [error, setError] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importRef = useRef(null);
 
   const openAdd = () => {
     setEditing(null);
@@ -121,7 +114,6 @@ export default function ClassroomsPage() {
       roomNo: row.roomNo,
       roomType: row.roomType,
       capacity: row.capacity,
-      status: row.status,
     });
     if (ROOM_TYPES.includes(row.roomType)) {
       setRoomTypeChoice(row.roomType);
@@ -152,7 +144,6 @@ export default function ClassroomsPage() {
       roomNo: String(form.roomNo).trim(),
       roomType,
       capacity: Number(form.capacity) || 0,
-      status: form.status,
     };
     if (editing) {
       updateRoom({ id: editing.id, ...payload });
@@ -163,9 +154,9 @@ export default function ClassroomsPage() {
   };
 
   const exportCsv = () => {
-    const header = ["Room No", "Room Type", "Capacity", "Status"];
+    const header = ["Room No", "Room Type", "Capacity"];
     const lines = classrooms.map((r) =>
-      [r.roomNo, r.roomType, r.capacity, r.status]
+      [r.roomNo, r.roomType, r.capacity]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(",")
     );
@@ -180,6 +171,34 @@ export default function ClassroomsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (importRef.current) importRef.current.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["File is empty or has no data rows."] });
+        return;
+      }
+      const existingNos = new Set(classrooms.map((r) => String(r.roomNo).trim().toLowerCase()));
+      let imported = 0, skipped = 0;
+      const errors = [];
+      lines.slice(1).forEach((line, idx) => {
+        const cols = line.replace(/^"|"$/g, "").split(/","/).map((v) => v.trim());
+        const [roomNo, roomType = "Classroom", capacity = "40"] = cols;
+        if (!roomNo) { errors.push(`Row ${idx + 2}: Room No is empty.`); skipped++; return; }
+        if (existingNos.has(roomNo.toLowerCase())) { skipped++; return; }
+        addRoom({ roomNo, roomType: roomType || "Classroom", capacity: Number(capacity) || 40 });
+        existingNos.add(roomNo.toLowerCase());
+        imported++;
+      });
+      setImportResult({ imported, skipped, errors });
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -190,24 +209,21 @@ export default function ClassroomsPage() {
           { label: "Classrooms" },
         ]}
         secondaryAction={
-          <button type="button" className={btnSecondary} onClick={exportCsv}>
-            <span className="inline-flex items-center gap-1.5">
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"
-                />
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={importRef} type="file" accept=".csv" className="hidden" id="classrooms-import" onChange={handleImportFile} />
+            <button type="button" className={btnSecondary} onClick={() => importRef.current?.click()} title="Import rooms from CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Import
+            </button>
+            <button type="button" className={btnSecondary} onClick={exportCsv} title="Export rooms to CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" />
               </svg>
               Export
-            </span>
-          </button>
+            </button>
+          </div>
         }
         primaryAction={
           <button type="button" className={btnPrimary} onClick={openAdd}>
@@ -254,9 +270,6 @@ export default function ClassroomsPage() {
               </th>
               <th>Room Type</th>
               <th>Capacity</th>
-              <th>
-                <SortLabel>Status</SortLabel>
-              </th>
               <th style={{ width: 100, textAlign: "center" }}>Action</th>
             </tr>
           </thead>
@@ -289,9 +302,6 @@ export default function ClassroomsPage() {
                     </span>
                   </td>
                   <td>{row.capacity} seats</td>
-                  <td>
-                    <DotStatus status={row.status} />
-                  </td>
                   <td>
                     <RowMenu
                       items={[
@@ -384,19 +394,6 @@ export default function ClassroomsPage() {
               }
             />
           </Field>
-          <Field label="Status">
-            <select
-              className={selectClass}
-              value={form.status}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, status: e.target.value }))
-              }
-            >
-              <option value="Available">Available</option>
-              <option value="Occupied">Occupied</option>
-              <option value="Maintenance">Maintenance</option>
-            </select>
-          </Field>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -418,18 +415,6 @@ export default function ClassroomsPage() {
         onClose={() => setFilterOpen(false)}
       >
         <div className="space-y-4">
-          <Field label="Status">
-            <select
-              className={selectClass}
-              value={list.statusFilter}
-              onChange={(e) => list.setStatusFilter(e.target.value)}
-            >
-              <option value="All">All</option>
-              <option value="Available">Available</option>
-              <option value="Occupied">Occupied</option>
-              <option value="Maintenance">Maintenance</option>
-            </select>
-          </Field>
           <Field label="Room Type">
             <select
               className={selectClass}
@@ -454,6 +439,26 @@ export default function ClassroomsPage() {
             Apply
           </button>
         </div>
+      </Modal>
+
+      <Modal open={!!importResult} title="Import Results" onClose={() => setImportResult(null)}>
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-4">
+              <span className="font-semibold text-green-600">✓ {importResult.imported} imported</span>
+              <span className="font-semibold text-[var(--ac-muted)]">↷ {importResult.skipped} skipped</span>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="max-h-40 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-red-700 space-y-1">
+                {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+              </ul>
+            )}
+            <p className="text-[var(--ac-muted)]">CSV format: <code>Room No, Room Type, Capacity</code></p>
+            <div className="flex justify-end pt-1">
+              <button type="button" className={btnPrimary} onClick={() => setImportResult(null)}>Done</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

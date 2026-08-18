@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Field, Modal, SearchSelect, selectClass } from "../../components/ui";
 import { useAcademic } from "../context/AcademicContext";
 import {
@@ -38,6 +38,8 @@ export default function ClassAllocationPage() {
   });
   const [error, setError] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { imported, skipped, errors }
+  const importRef = useRef(null);
 
   const classMap = useMemo(
     () => Object.fromEntries(classes.map((c) => [c.id, c])),
@@ -120,6 +122,108 @@ export default function ClassAllocationPage() {
     setModalOpen(true);
   };
 
+  // ── Export ──────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    const headers = ["Class", "Section", "Room No", "Room Type", "Capacity", "Teacher", "Enrolled"];
+    const rows = enriched.map((r) => {
+      const room = roomMap[r.roomId];
+      return [
+        r.className,
+        r.sectionName,
+        room?.roomNo ?? "",
+        room?.roomType ?? "",
+        room?.capacity ?? "",
+        r.teacherName,
+        r.enrolled ?? 0,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "class_allocations.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Import ──────────────────────────────────────────────────────────────
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!importRef.current) return;
+    importRef.current.value = "";
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["File is empty or has no data rows."] });
+        return;
+      }
+
+      // Build lookup maps by name (case-insensitive)
+      const classByName = Object.fromEntries(
+        classes.map((c) => [c.name.trim().toLowerCase(), c])
+      );
+      const sectionByName = Object.fromEntries(
+        sections.map((s) => [s.name.trim().toLowerCase(), s])
+      );
+      const roomByNo = Object.fromEntries(
+        classrooms.map((r) => [String(r.roomNo).trim().toLowerCase(), r])
+      );
+      const teacherByName = Object.fromEntries(
+        teachers.map((t) => [t.name.trim().toLowerCase(), t])
+      );
+
+      const parseRow = (raw) => raw.replace(/^"|"|"$/g, "").split(/","/).map((v) => v.trim());
+
+      let imported = 0;
+      let skipped = 0;
+      const errors = [];
+
+      // Skip header row (index 0)
+      lines.slice(1).forEach((line, idx) => {
+        const rowNum = idx + 2;
+        const cols = parseRow(line);
+        const [className, sectionName, roomNo, , , teacherName] = cols;
+
+        const cls = classByName[className?.toLowerCase()];
+        const sec = sectionByName[sectionName?.toLowerCase()];
+
+        if (!cls || !sec) {
+          errors.push(`Row ${rowNum}: Class "${className}" or Section "${sectionName}" not found.`);
+          skipped++;
+          return;
+        }
+
+        const duplicate = mappings.some(
+          (m) => m.classId === cls.id && m.sectionId === sec.id
+        );
+        if (duplicate) {
+          skipped++;
+          return;
+        }
+
+        const room = roomNo ? roomByNo[String(roomNo).toLowerCase()] : null;
+        const teacher = teacherName ? teacherByName[teacherName.toLowerCase()] : null;
+
+        addMapping({
+          classId: cls.id,
+          sectionId: sec.id,
+          roomId: room?.id || "",
+          teacherId: teacher?.id || "",
+          enrolled: 0,
+        });
+        imported++;
+      });
+
+      setImportResult({ imported, skipped, errors });
+    };
+    reader.readAsText(file);
+  };
+
   const openEdit = (row) => {
     setEditing(row);
     setForm({
@@ -173,22 +277,79 @@ export default function ClassAllocationPage() {
           { label: "Class Allocation" },
         ]}
         primaryAction={
-          <button type="button" className={btnPrimary} onClick={openAdd}>
-            <svg
-              className="h-[15px] w-[15px]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Import */}
+            <input
+              ref={importRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              id="class-alloc-import"
+              onChange={handleImportFile}
+            />
+            <button
+              type="button"
+              className={btnSecondary}
+              onClick={() => importRef.current?.click()}
+              title="Import allocations from CSV"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 5v14M5 12h14"
-              />
-            </svg>
-            New Mapping
-          </button>
+              <svg
+                className="h-[15px] w-[15px]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"
+                />
+              </svg>
+              Import
+            </button>
+
+            {/* Export */}
+            <button
+              type="button"
+              className={btnSecondary}
+              onClick={handleExport}
+              title="Export allocations to CSV"
+            >
+              <svg
+                className="h-[15px] w-[15px]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12"
+                />
+              </svg>
+              Export
+            </button>
+
+            {/* New Mapping */}
+            <button type="button" className={btnPrimary} onClick={openAdd}>
+              <svg
+                className="h-[15px] w-[15px]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 5v14M5 12h14"
+                />
+              </svg>
+              New Mapping
+            </button>
+          </div>
         }
         search={search}
         onSearchChange={(v) => {
@@ -427,6 +588,45 @@ export default function ClassAllocationPage() {
             Close
           </button>
         </div>
+      </Modal>
+
+      {/* Import Result Modal */}
+      <Modal
+        open={!!importResult}
+        title="Import Results"
+        onClose={() => setImportResult(null)}
+      >
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-4">
+              <span className="font-semibold text-green-600">
+                ✓ {importResult.imported} imported
+              </span>
+              <span className="font-semibold text-[var(--ac-muted)]">
+                ↷ {importResult.skipped} skipped
+              </span>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="max-h-40 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-red-700 space-y-1">
+                {importResult.errors.map((err, i) => (
+                  <li key={i}>• {err}</li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[var(--ac-muted)]">
+              CSV format: <code>Class, Section, Room No, Room Type, Capacity, Teacher, Enrolled</code>
+            </p>
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => setImportResult(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Field, Modal, inputClass, selectClass } from "../../components/ui";
 import { SUBJECT_TYPES } from "../data/academic";
 import { useAcademic } from "../context/AcademicContext";
@@ -20,23 +20,28 @@ function usePagedList(rows) {
   const [selected, setSelected] = useState([]);
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = rows.filter((r) => {
-      const hay = `${r.name} ${r.type} ${r.status}`.toLowerCase();
+      const hay = `${r.code} ${r.name} ${r.type} ${r.status} ${r.isAdditional ? "additional" : "main"}`.toLowerCase();
       const matchQ = !q || hay.includes(q);
       const matchStatus =
         statusFilter === "All" || r.status === statusFilter;
       const matchType = typeFilter === "All" || r.type === typeFilter;
-      return matchQ && matchStatus && matchType;
+      const matchCat =
+        categoryFilter === "All" ||
+        (categoryFilter === "Additional" && r.isAdditional) ||
+        (categoryFilter === "Main" && !r.isAdditional);
+      return matchQ && matchStatus && matchType && matchCat;
     });
     list = [...list].sort((a, b) => {
       const cmp = String(a.name).localeCompare(String(b.name));
       return sort === "az" ? cmp : -cmp;
     });
     return list;
-  }, [rows, search, sort, statusFilter, typeFilter]);
+  }, [rows, search, sort, statusFilter, typeFilter, categoryFilter]);
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -74,6 +79,11 @@ function usePagedList(rows) {
       setTypeFilter(v);
       setPage(1);
     },
+    categoryFilter,
+    setCategoryFilter: (v) => {
+      setCategoryFilter(v);
+      setPage(1);
+    },
     toggleAll: (checked) =>
       setSelected(checked ? pageRows.map((r) => r.id) : []),
     toggleOne: (id, checked) =>
@@ -86,9 +96,11 @@ function usePagedList(rows) {
 }
 
 const emptyForm = {
+  code: "",
   name: "",
   type: "Theory",
   status: "Active",
+  isAdditional: false,
 };
 
 export default function SubjectsPage() {
@@ -100,6 +112,8 @@ export default function SubjectsPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importRef = useRef(null);
 
   const openAdd = () => {
     setEditing(null);
@@ -111,9 +125,11 @@ export default function SubjectsPage() {
   const openEdit = (row) => {
     setEditing(row);
     setForm({
+      code: row.code || "",
       name: row.name,
       type: row.type,
       status: row.status,
+      isAdditional: !!row.isAdditional,
     });
     setError("");
     setModalOpen(true);
@@ -126,9 +142,11 @@ export default function SubjectsPage() {
       return;
     }
     const payload = {
+      code: String(form.code).trim(),
       name: String(form.name).trim(),
       type: form.type,
       status: form.status,
+      isAdditional: !!form.isAdditional,
     };
     if (editing) {
       updateSubject({ id: editing.id, ...payload });
@@ -139,9 +157,9 @@ export default function SubjectsPage() {
   };
 
   const exportCsv = () => {
-    const header = ["Name", "Type", "Status"];
+    const header = ["Code", "Name", "Type", "Status", "Is Additional"];
     const lines = subjects.map((r) =>
-      [r.name, r.type, r.status]
+      [r.code, r.name, r.type, r.status, r.isAdditional ? "Yes" : "No"]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(",")
     );
@@ -156,6 +174,40 @@ export default function SubjectsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (importRef.current) importRef.current.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["File is empty or has no data rows."] });
+        return;
+      }
+      const existingNames = new Set(subjects.map((s) => s.name.trim().toLowerCase()));
+      let imported = 0, skipped = 0;
+      const errors = [];
+      lines.slice(1).forEach((line, idx) => {
+        const cols = line.replace(/^"|"|"$/g, "").split(/","/).map((v) => v.trim());
+        const [sCode = "", sName, sType = "Theory", sStatus = "Active", sAdd = "No"] = cols;
+        if (!sName) { errors.push(`Row ${idx + 2}: Name is empty.`); skipped++; return; }
+        if (existingNames.has(sName.toLowerCase())) { skipped++; return; }
+        addSubject({
+          code: sCode,
+          name: sName,
+          type: SUBJECT_TYPES.includes(sType) ? sType : "Theory",
+          status: ["Active","Inactive"].includes(sStatus) ? sStatus : "Active",
+          isAdditional: sAdd.toLowerCase() === "yes" || sAdd === "true" || sAdd === "1",
+        });
+        existingNames.add(sName.toLowerCase());
+        imported++;
+      });
+      setImportResult({ imported, skipped, errors });
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -166,24 +218,21 @@ export default function SubjectsPage() {
           { label: "Subject List" },
         ]}
         secondaryAction={
-          <button type="button" className={btnSecondary} onClick={exportCsv}>
-            <span className="inline-flex items-center gap-1.5">
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"
-                />
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={importRef} type="file" accept=".csv" className="hidden" id="subjects-import" onChange={handleImportFile} />
+            <button type="button" className={btnSecondary} onClick={() => importRef.current?.click()} title="Import subjects from CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Import
+            </button>
+            <button type="button" className={btnSecondary} onClick={exportCsv} title="Export subjects to CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" />
               </svg>
               Export
-            </span>
-          </button>
+            </button>
+          </div>
         }
         primaryAction={
           <button type="button" className={btnPrimary} onClick={openAdd}>
@@ -226,6 +275,9 @@ export default function SubjectsPage() {
                 />
               </th>
               <th>
+                <SortLabel>Code</SortLabel>
+              </th>
+              <th>
                 <SortLabel>Name</SortLabel>
               </th>
               <th>Type</th>
@@ -239,7 +291,7 @@ export default function SubjectsPage() {
             {list.pageRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-[var(--ac-muted)]"
                 >
                   No subjects found.
@@ -259,7 +311,15 @@ export default function SubjectsPage() {
                     />
                   </td>
                   <td>
-                    <span className="ac-name">{row.name}</span>
+                    <span className="text-sm font-medium text-[var(--ac-muted)]">{row.code || "—"}</span>
+                  </td>
+                  <td>
+                    <div>
+                      <span className="ac-name">{row.name}</span>
+                      {row.isAdditional && (
+                        <div className="text-[11px] text-amber-600 font-medium mt-0.5">Additional Subject</div>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <SubjectTypeBadge type={row.type} />
@@ -317,6 +377,17 @@ export default function SubjectsPage() {
               {error}
             </p>
           ) : null}
+          <Field label="Subject Code">
+            <input
+              className={inputClass}
+              value={form.code}
+              onChange={(e) => {
+                setForm((p) => ({ ...p, code: e.target.value }));
+                setError("");
+              }}
+              placeholder="e.g. ENG101"
+            />
+          </Field>
           <Field label="Subject name" required>
             <input
               className={inputClass}
@@ -356,6 +427,32 @@ export default function SubjectsPage() {
               <option value="Inactive">Inactive</option>
             </select>
           </Field>
+
+          {/* ── Additional Subject Toggle ── */}
+          <Field label="Additional Subject">
+            <div className="flex items-center justify-between rounded-lg border border-[var(--ac-border)] bg-gray-50/60 p-3">
+              <div>
+                <div className="text-xs font-semibold text-[var(--ac-text)]">
+                  Is this an Additional Subject?
+                </div>
+                <div className="text-[11px] text-[var(--ac-muted)]">
+                  Enable if this is an additional subject.
+                </div>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={!!form.isAdditional}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, isAdditional: e.target.checked }))
+                  }
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--ac-green)] peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
+              </label>
+            </div>
+          </Field>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -402,6 +499,17 @@ export default function SubjectsPage() {
               ))}
             </select>
           </Field>
+          <Field label="Category">
+            <select
+              className={selectClass}
+              value={list.categoryFilter}
+              onChange={(e) => list.setCategoryFilter(e.target.value)}
+            >
+              <option value="All">All Categories</option>
+              <option value="Main">Main Only</option>
+              <option value="Additional">Additional Only</option>
+            </select>
+          </Field>
         </div>
         <div className="mt-4 flex justify-end">
           <button
@@ -412,6 +520,26 @@ export default function SubjectsPage() {
             Apply
           </button>
         </div>
+      </Modal>
+
+      <Modal open={!!importResult} title="Import Results" onClose={() => setImportResult(null)}>
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-4">
+              <span className="font-semibold text-green-600">✓ {importResult.imported} imported</span>
+              <span className="font-semibold text-[var(--ac-muted)]">↷ {importResult.skipped} skipped</span>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="max-h-40 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-red-700 space-y-1">
+                {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+              </ul>
+            )}
+            <p className="text-[var(--ac-muted)]">CSV format: <code>Code, Name, Type, Status</code></p>
+            <div className="flex justify-end pt-1">
+              <button type="button" className={btnPrimary} onClick={() => setImportResult(null)}>Done</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

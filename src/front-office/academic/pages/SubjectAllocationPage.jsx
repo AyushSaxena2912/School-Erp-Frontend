@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Field, Modal, inputClass, selectClass } from "../../components/ui";
 import { useAcademic } from "../context/AcademicContext";
 import {
@@ -33,6 +33,9 @@ export default function SubjectAllocationPage() {
   const [subjectQuery, setSubjectQuery] = useState("");
   const [error, setError] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [viewingRow, setViewingRow] = useState(null);
+  const importRef = useRef(null);
 
   const subjectMap = useMemo(
     () => Object.fromEntries(subjects.map((s) => [s.id, s])),
@@ -172,6 +175,69 @@ export default function SubjectAllocationPage() {
     setModalOpen(false);
   };
 
+  // ── Export ──────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    const header = ["Class", "Subjects (semicolon-separated)"];
+    const rows = enriched.map((r) =>
+      [
+        r.className,
+        r.subjects.map((s) => s.name).join(";"),
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
+    );
+    const csv = [header.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "subject_allocation.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Import ──────────────────────────────────────────────────────────────
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (importRef.current) importRef.current.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["File is empty or has no data rows."] });
+        return;
+      }
+      const classByName = Object.fromEntries(
+        classes.map((c) => [c.name.trim().toLowerCase(), c])
+      );
+      const subjectByName = Object.fromEntries(
+        subjects.map((s) => [s.name.trim().toLowerCase(), s])
+      );
+      let imported = 0, skipped = 0;
+      const errors = [];
+      lines.slice(1).forEach((line, idx) => {
+        const cols = line.replace(/^"|"|"$/g, "").split(/","/).map((v) => v.trim());
+        const [className, subjectsRaw = ""] = cols;
+        const cls = classByName[className?.toLowerCase()];
+        if (!cls) {
+          errors.push(`Row ${idx + 2}: Class "${className}" not found.`);
+          skipped++;
+          return;
+        }
+        const ids = subjectsRaw
+          .split(";")
+          .map((n) => n.trim())
+          .filter(Boolean)
+          .map((n) => subjectByName[n.toLowerCase()]?.id)
+          .filter(Boolean);
+        if (ids.length === 0) { skipped++; return; }
+        setClassSubjects(cls.id, ids);
+        imported++;
+      });
+      setImportResult({ imported, skipped, errors });
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -183,22 +249,27 @@ export default function SubjectAllocationPage() {
           { label: "Subject Allocation" },
         ]}
         primaryAction={
-          <button type="button" className={btnPrimary} onClick={openAdd}>
-            <svg
-              className="h-[15px] w-[15px]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 5v14M5 12h14"
-              />
-            </svg>
-            Assign Subjects
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={importRef} type="file" accept=".csv" className="hidden" id="subject-alloc-import" onChange={handleImportFile} />
+            <button type="button" className={btnSecondary} onClick={() => importRef.current?.click()} title="Import allocations from CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Import
+            </button>
+            <button type="button" className={btnSecondary} onClick={handleExport} title="Export allocations to CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" />
+              </svg>
+              Export
+            </button>
+            <button type="button" className={btnPrimary} onClick={openAdd}>
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+              </svg>
+              Assign Subjects
+            </button>
+          </div>
         }
         search={search}
         onSearchChange={(v) => {
@@ -276,12 +347,20 @@ export default function SubjectAllocationPage() {
                         No subjects assigned
                       </span>
                     ) : (
-                      <div className="ac-subject-chips">
-                        {row.subjects.map((s) => (
-                          <span key={s.id} className="ac-subject-chip">
-                            {s.name}
+                      <div 
+                        className="flex flex-wrap items-center gap-1"
+                        title={row.subjects.map(s => s.name).join(', ')}
+                      >
+                        {row.subjects.slice(0, 3).map((s, idx, arr) => (
+                          <span key={s.id} className="text-[13px] font-medium text-[var(--ac-text)]">
+                            {s.name}{idx < arr.length - 1 || row.subjects.length > 3 ? "," : ""}
                           </span>
                         ))}
+                        {row.subjects.length > 3 && (
+                          <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-md bg-gray-100 text-[11px] font-bold text-gray-600 border border-gray-200">
+                            +{row.subjects.length - 3} more
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>
@@ -293,6 +372,10 @@ export default function SubjectAllocationPage() {
                   <td>
                     <RowMenu
                       items={[
+                        {
+                          label: "View subjects",
+                          onClick: () => setViewingRow(row),
+                        },
                         {
                           label: "Assign / Edit",
                           onClick: () => openAssign(row),
@@ -384,7 +467,7 @@ export default function SubjectAllocationPage() {
                         onChange={() => toggleSubject(s.id)}
                       />
                       <span className="flex-1 text-sm text-[var(--ac-text)]">
-                        {s.name}
+                        {s.name} {s.code && <span className="ml-1.5 text-xs text-[var(--ac-muted)] font-medium bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded">{s.code}</span>}
                       </span>
                       <SubjectTypeBadge type={s.type} />
                     </label>
@@ -504,6 +587,50 @@ export default function SubjectAllocationPage() {
             Apply
           </button>
         </div>
+      </Modal>
+
+      <Modal open={!!importResult} title="Import Results" onClose={() => setImportResult(null)}>
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-4">
+              <span className="font-semibold text-green-600">✓ {importResult.imported} imported</span>
+              <span className="font-semibold text-[var(--ac-muted)]">↷ {importResult.skipped} skipped</span>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="max-h-40 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-red-700 space-y-1">
+                {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+              </ul>
+            )}
+            <p className="text-[var(--ac-muted)]">CSV format: <code>Class, Subjects (semicolon-separated)</code></p>
+            <div className="flex justify-end pt-1">
+              <button type="button" className={btnPrimary} onClick={() => setImportResult(null)}>Done</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!viewingRow} title={`Assigned Subjects - ${viewingRow?.className}`} onClose={() => setViewingRow(null)}>
+        {viewingRow && (
+          <div className="space-y-4">
+            {viewingRow.subjects.length === 0 ? (
+              <p className="text-[var(--ac-muted)] text-sm">No subjects assigned.</p>
+            ) : (
+              <div className="ac-subject-checklist max-h-60 overflow-y-auto">
+                {viewingRow.subjects.map((s) => (
+                  <div key={s.id} className="ac-subject-check-row pointer-events-none">
+                    <span className="flex-1 text-sm text-[var(--ac-text)]">
+                      {s.name} {s.code && <span className="ml-1.5 text-xs text-[var(--ac-muted)] font-medium bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded">{s.code}</span>}
+                    </span>
+                    <SubjectTypeBadge type={s.type} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <button type="button" className={btnPrimary} onClick={() => setViewingRow(null)}>Close</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

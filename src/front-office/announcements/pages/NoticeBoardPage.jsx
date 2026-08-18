@@ -137,6 +137,99 @@ function formatTargetLabel(notice, classes, sections) {
 
 const PER_PAGE = 8;
 
+function SimpleEditor({ value, onChange, disabled, placeholder }) {
+  const editorRef = useRef(null);
+
+  useEffect(() => {
+    if (!disabled && editorRef.current && editorRef.current.innerHTML !== (value || "")) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value, disabled]);
+
+  const exec = (cmd, arg) => {
+    if (disabled) return;
+    document.execCommand(cmd, false, arg);
+    editorRef.current.focus();
+    if (onChange) onChange(editorRef.current.innerHTML);
+  };
+
+  const handleInput = () => {
+    if (onChange && editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  return (
+    <div className={`border border-[var(--ac-border)] rounded-md overflow-hidden bg-white ${disabled ? "opacity-70 bg-gray-50" : ""}`}>
+      {!disabled && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-[var(--ac-border)] p-1.5 bg-[#f8f9fb]">
+          <button type="button" onClick={() => exec("bold")} className="p-1 hover:bg-gray-200 rounded text-sm font-bold w-7 text-center text-gray-700">B</button>
+          <button type="button" onClick={() => exec("italic")} className="p-1 hover:bg-gray-200 rounded text-sm italic w-7 text-center text-gray-700">I</button>
+          <button type="button" onClick={() => exec("underline")} className="p-1 hover:bg-gray-200 rounded text-sm underline w-7 text-center text-gray-700">U</button>
+          <button type="button" onClick={() => exec("strikeThrough")} className="p-1 hover:bg-gray-200 rounded text-sm line-through w-7 text-center text-gray-700">S</button>
+          <div
+            className="flex items-center hover:bg-gray-200 rounded px-1"
+            title="Text Color"
+            onMouseDown={(e) => {
+              // Save selection before color picker steals focus
+              const sel = window.getSelection();
+              if (sel && sel.rangeCount > 0) {
+                editorRef.current._savedRange = sel.getRangeAt(0).cloneRange();
+              }
+            }}
+          >
+            <input
+              type="color"
+              className="w-5 h-5 border-0 p-0 cursor-pointer bg-transparent rounded-full"
+              onChange={(e) => {
+                // Restore saved selection then apply color
+                const saved = editorRef.current._savedRange;
+                if (saved) {
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(saved);
+                }
+                exec("foreColor", e.target.value);
+              }}
+              defaultValue="#1a1d23"
+            />
+          </div>
+          <div className="w-px h-5 bg-gray-300 mx-1"></div>
+          <button type="button" onClick={() => exec("justifyLeft")} className="p-1 hover:bg-gray-200 rounded text-gray-700" title="Align Left">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 21v-2h18v2H3zm0-4v-2h12v2H3zm0-4v-2h18v2H3zm0-4V7h12v2H3z"/></svg>
+          </button>
+          <button type="button" onClick={() => exec("justifyCenter")} className="p-1 hover:bg-gray-200 rounded text-gray-700" title="Align Center">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 21v-2h18v2H3zm4-4v-2h10v2H7zm-4-4v-2h18v2H3zm4-4V7h10v2H7z"/></svg>
+          </button>
+          <button type="button" onClick={() => exec("justifyRight")} className="p-1 hover:bg-gray-200 rounded text-gray-700" title="Align Right">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3 21v-2h18v2H3zm6-4v-2h12v2H9zm-6-4v-2h18v2H3zm6-4V7h12v2H9z"/></svg>
+          </button>
+          <div className="w-px h-5 bg-gray-300 mx-1"></div>
+          <button type="button" onClick={() => exec("insertUnorderedList")} className="p-1 hover:bg-gray-200 rounded text-gray-700" title="Bullet List">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h13v2H8V6zm-4 2V6h2v2H4zm4 5h13v2H8v-2zm-4 2v-2h2v2H4zm4 5h13v2H8v-2zm-4 2v-2h2v2H4z"/></svg>
+          </button>
+          <button type="button" onClick={() => exec("insertOrderedList")} className="p-1 hover:bg-gray-200 rounded text-gray-700" title="Numbered List">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h13v2H8V6zm-5 2V6h2v2H3zm5 5h13v2H8v-2zm-5 2v-2h2v2H3zm5 5h13v2H8v-2zm-5 2v-2h2v2H3z"/></svg>
+          </button>
+        </div>
+      )}
+      {disabled ? (
+        <div 
+          className="p-3 min-h-[120px] max-h-[300px] overflow-y-auto text-[13.5px] text-[var(--ac-text)]"
+          dangerouslySetInnerHTML={{ __html: value || `<span class="text-[var(--ac-muted)]">${placeholder}</span>` }}
+        />
+      ) : (
+        <div
+          ref={editorRef}
+          className="p-3 min-h-[120px] max-h-[300px] overflow-y-auto text-[13.5px] text-[var(--ac-text)] focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--ac-muted)]"
+          contentEditable={true}
+          onInput={handleInput}
+          onBlur={handleInput}
+          data-placeholder={placeholder}
+        ></div>
+      )}
+    </div>
+  );
+}
+
 export default function NoticeBoardPage() {
   const { notices, addNotice, updateNotice, deleteNotice } = useNotices();
   const { addCalendarEvent, classes, sections, mappings, routineSlots, teachers } =
@@ -152,6 +245,7 @@ export default function NoticeBoardPage() {
   const [toast, setToast] = useState("");
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mediaDropdownOpen, setMediaDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
   const dropdownRef = useRef(null);
 
@@ -575,6 +669,8 @@ export default function NoticeBoardPage() {
           cat: "Notice",
           color: "red",
           desc: form.message.trim() || "Added from Notice Board",
+          classScope: form.classScope || "all",
+          classTargets: form.classScope === "specific" ? (form.classTargets || []) : [],
         });
       }
       showToast("Notice added successfully!");
@@ -1100,32 +1196,57 @@ export default function NoticeBoardPage() {
           <div className="nb-attach">
             <div className="nb-attach-label">Attachment</div>
             <div className="nb-attach-hint">
-              PDF document or poster image (JPG, PNG, WEBP). Max size 4MB.
+              PDF document or poster image (JPG, PNG, WEBP). Recommended dimensions: 800x1200px. Max size 4MB.
             </div>
             {!readOnly ? (
-              <div className="nb-attach-actions">
-                <label className="ac-btn ac-btn-primary cursor-pointer">
-                  Upload PDF
-                  <input
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    className="hidden"
-                    onChange={onFileChange}
-                  />
-                </label>
-                <label className="nb-btn-poster cursor-pointer">
-                  Attach Poster
-                  <input
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={onFileChange}
-                  />
-                </label>
+              <div className="nb-attach-actions relative flex items-center">
+                <button
+                  type="button"
+                  className="ac-btn ac-btn-primary"
+                  onClick={() => setMediaDropdownOpen(!mediaDropdownOpen)}
+                >
+                  Add media
+                  <svg className="ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {mediaDropdownOpen && (
+                  <div 
+                    className="absolute top-full left-0 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 z-20"
+                    onMouseLeave={() => setMediaDropdownOpen(false)}
+                  >
+                    <div className="py-1">
+                      <label className="block px-4 py-2 text-sm text-[var(--ac-text)] hover:bg-gray-100 cursor-pointer">
+                        Upload PDF
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            onFileChange(e);
+                            setMediaDropdownOpen(false);
+                          }}
+                        />
+                      </label>
+                      <label className="block px-4 py-2 text-sm text-[var(--ac-text)] hover:bg-gray-100 cursor-pointer">
+                        Upload Poster <span className="ml-1 font-normal opacity-75 text-[10px]">(800x1200)</span>
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            onFileChange(e);
+                            setMediaDropdownOpen(false);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
                 {form.attachmentName ? (
                   <button
                     type="button"
-                    className="nb-attach-clear"
+                    className="nb-attach-clear ml-2"
                     onClick={clearAttachment}
                   >
                     Remove
@@ -1151,13 +1272,11 @@ export default function NoticeBoardPage() {
           </div>
 
           <Field label="Message">
-            <textarea
-              className={inputClass}
-              rows={4}
+            <SimpleEditor
               value={form.message}
               disabled={readOnly}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, message: e.target.value }))
+              onChange={(val) =>
+                setForm((prev) => ({ ...prev, message: val }))
               }
               placeholder="Write your message here…"
             />
@@ -1245,30 +1364,34 @@ export default function NoticeBoardPage() {
                         <div className="nb-class-block-head">
                           <span>{cls?.name || t.classId}</span>
                           {!readOnly ? (
-                            <button
-                              type="button"
-                              className="nb-link-btn"
-                              onClick={() =>
-                                selectAllSectionsForClass(t.classId)
-                              }
-                            >
-                              All sections
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="nb-link-btn"
+                                onClick={() => selectAllSectionsForClass(t.classId)}
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                className="nb-link-btn"
+                                style={{ color: "#ef4444" }}
+                                onClick={() => toggleClass(t.classId)}
+                              >
+                                Remove
+                              </button>
+                            </div>
                           ) : null}
                         </div>
                         <div className="nb-chip-grid">
                           {secs.map((s) => {
-                            const isAll =
-                              !t.sectionIds.length ||
-                              t.sectionIds.length === secs.length;
-                            const checked =
-                              isAll || t.sectionIds.includes(s.id);
+                            const isAll = !t.sectionIds.length;
+                            // [] = all sections selected; show all chips green
+                            const checked = isAll || t.sectionIds.includes(s.id);
                             return (
                               <label
                                 key={s.id}
-                                className={`nb-chip ${
-                                  checked && !isAll ? "nb-chip-on" : ""
-                                } ${isAll ? "nb-chip-soft" : ""}`}
+                                className={`nb-chip ${checked ? "nb-chip-on" : ""}`}
                               >
                                 <input
                                   type="checkbox"
@@ -1278,44 +1401,24 @@ export default function NoticeBoardPage() {
                                     const allIds = secs.map((x) => x.id);
                                     setForm((prev) => ({
                                       ...prev,
-                                      classTargets: prev.classTargets.map(
-                                        (x) => {
-                                          if (x.classId !== t.classId)
-                                            return x;
-                                          const current =
-                                            x.sectionIds.length === 0
-                                              ? allIds
-                                              : [...x.sectionIds];
-                                          const next = current.includes(s.id)
-                                            ? current.filter(
-                                                (id) => id !== s.id
-                                              )
-                                            : [...current, s.id];
-                                          // none left → treat as all
-                                          if (next.length === 0) {
-                                            return {
-                                              ...x,
-                                              sectionIds: [],
-                                            };
-                                          }
-                                          // all selected → store as all
-                                          if (
-                                            next.length === allIds.length &&
-                                            allIds.every((id) =>
-                                              next.includes(id)
-                                            )
-                                          ) {
-                                            return {
-                                              ...x,
-                                              sectionIds: [],
-                                            };
-                                          }
-                                          return {
-                                            ...x,
-                                            sectionIds: next,
-                                          };
+                                      classTargets: prev.classTargets.map((x) => {
+                                        if (x.classId !== t.classId) return x;
+                                        // If currently "all" (empty), expand to all ids first
+                                        const current = x.sectionIds.length
+                                          ? [...x.sectionIds]
+                                          : [...allIds];
+                                        const next = current.includes(s.id)
+                                          ? current.filter((id) => id !== s.id)
+                                          : [...current, s.id];
+                                        // All manually selected → collapse back to []
+                                        if (
+                                          next.length === allIds.length &&
+                                          allIds.every((id) => next.includes(id))
+                                        ) {
+                                          return { ...x, sectionIds: [] };
                                         }
-                                      ),
+                                        return { ...x, sectionIds: next };
+                                      }),
                                     }));
                                   }}
                                 />

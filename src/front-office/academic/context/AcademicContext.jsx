@@ -202,7 +202,7 @@ function reducer(state, action) {
           ...state.calendarByYear,
           [academicYear]: [
             ...list,
-            { id: uid("cev"), color: "blue", cat: "Other", desc: "", ...event },
+            { id: uid("cev"), color: "blue", cat: "Other", desc: "", classScope: "all", classTargets: [], ...event },
           ],
         },
       };

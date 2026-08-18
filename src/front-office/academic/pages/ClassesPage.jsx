@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Field, Modal, inputClass, selectClass } from "../../components/ui";
 import { useAcademic } from "../context/AcademicContext";
 import {
@@ -85,6 +85,8 @@ export default function ClassesPage() {
   const [status, setStatus] = useState("Active");
   const [error, setError] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importRef = useRef(null);
 
   const openAdd = () => {
     setEditing(null);
@@ -116,6 +118,53 @@ export default function ClassesPage() {
     setModalOpen(false);
   };
 
+  // ── Export ──────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    const header = ["Name", "Status"];
+    const rows = classes.map((r) =>
+      [r.name, r.status]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(",")
+    );
+    const csv = [header.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "classes.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Import ──────────────────────────────────────────────────────────────
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (importRef.current) importRef.current.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const lines = ev.target.result.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["File is empty or has no data rows."] });
+        return;
+      }
+      const existingNames = new Set(classes.map((c) => c.name.trim().toLowerCase()));
+      let imported = 0, skipped = 0;
+      const errors = [];
+      lines.slice(1).forEach((line, idx) => {
+        const cols = line.replace(/^"|"|"$/g, "").split(/","/).map((v) => v.trim());
+        const [cName, cStatus = "Active"] = cols;
+        if (!cName) { errors.push(`Row ${idx + 2}: Name is empty.`); skipped++; return; }
+        if (existingNames.has(cName.toLowerCase())) { skipped++; return; }
+        addClass({ name: cName, status: ["Active", "Inactive"].includes(cStatus) ? cStatus : "Active" });
+        existingNames.add(cName.toLowerCase());
+        imported++;
+      });
+      setImportResult({ imported, skipped, errors });
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -126,22 +175,27 @@ export default function ClassesPage() {
           { label: "Classes" },
         ]}
         primaryAction={
-          <button type="button" className={btnPrimary} onClick={openAdd}>
-            <svg
-              className="h-[15px] w-[15px]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 5v14M5 12h14"
-              />
-            </svg>
-            Add Class
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={importRef} type="file" accept=".csv" className="hidden" id="classes-import" onChange={handleImportFile} />
+            <button type="button" className={btnSecondary} onClick={() => importRef.current?.click()} title="Import classes from CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Import
+            </button>
+            <button type="button" className={btnSecondary} onClick={handleExport} title="Export classes to CSV">
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" />
+              </svg>
+              Export
+            </button>
+            <button type="button" className={btnPrimary} onClick={openAdd}>
+              <svg className="h-[15px] w-[15px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+              </svg>
+              Add Class
+            </button>
+          </div>
         }
         search={list.search}
         onSearchChange={list.setSearch}
@@ -307,6 +361,26 @@ export default function ClassesPage() {
             Apply
           </button>
         </div>
+      </Modal>
+
+      <Modal open={!!importResult} title="Import Results" onClose={() => setImportResult(null)}>
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-4">
+              <span className="font-semibold text-green-600">✓ {importResult.imported} imported</span>
+              <span className="font-semibold text-[var(--ac-muted)]">↷ {importResult.skipped} skipped</span>
+            </div>
+            {importResult.errors.length > 0 && (
+              <ul className="max-h-40 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-red-700 space-y-1">
+                {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+              </ul>
+            )}
+            <p className="text-[var(--ac-muted)]">CSV format: <code>Name, Status</code></p>
+            <div className="flex justify-end pt-1">
+              <button type="button" className={btnPrimary} onClick={() => setImportResult(null)}>Done</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

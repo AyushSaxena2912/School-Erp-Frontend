@@ -182,11 +182,14 @@ function TagInput({ label, values, onChange, placeholder }) {
   );
 }
 
-function DocUpload({ label, hint, value, onChange }) {
+function DocUpload({ label, required, error, hint, value, onChange }) {
   const ref = useRef(null);
   return (
     <div>
-      <p className="mb-1 text-sm font-medium text-gray-800">{label}</p>
+      <p className="mb-1 text-sm font-medium text-gray-800">
+        {label}
+        {required ? <span className="text-red-500"> *</span> : null}
+      </p>
       <p className="mb-2 text-xs text-gray-500">{hint}</p>
       <input
         ref={ref}
@@ -219,18 +222,19 @@ function DocUpload({ label, hint, value, onChange }) {
       >
         Upload Document
       </button>
-      {value?.name ? (
-        <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-700">
-          <span className="truncate">{value.name}</span>
+      {value ? (
+        <div className="mt-2 flex items-center gap-2 text-xs text-green-700 font-medium">
+          <span>✓ {value.name}</span>
           <button
             type="button"
-            className="shrink-0 text-red-600 hover:underline"
+            className="text-red-600 hover:underline"
             onClick={() => onChange(null)}
           >
             Remove
           </button>
         </div>
       ) : null}
+      {error ? <p className="mt-1 text-sm text-red-500">{error}</p> : null}
     </div>
   );
 }
@@ -438,6 +442,8 @@ function ParentAdmissionFormInner() {
     if (!form.dateOfBirth) next.dateOfBirth = "Required";
     if (!form.primaryContact.trim()) next.primaryContact = "Required";
     if (!form.currentAddress.trim()) next.currentAddress = "Required";
+    if (!form.aadharNo.trim()) next.aadharNo = "Required";
+    if (!form.docs.aadhar) next.aadharDoc = "Required";
     if (!form.father.name.trim() && !form.mother.name.trim()) {
       next.parents = "Enter father or mother details";
     }
@@ -682,13 +688,16 @@ function ParentAdmissionFormInner() {
                 onChange={(e) => set("email", e.target.value)}
               />
             </Field>
-            <Field label="Aadhar Card No.">
+            <Field label="Aadhar Card No." required error={errors.aadharNo}>
               <input
                 className={inputClass}
                 value={form.aadharNo}
-                onChange={(e) =>
-                  set("aadharNo", e.target.value.replace(/\D/g, "").slice(0, 12))
-                }
+                onChange={(e) => {
+                  set("aadharNo", e.target.value.replace(/\D/g, "").slice(0, 12));
+                  if (e.target.value.trim()) {
+                    setErrors((p) => ({ ...p, aadharNo: "" }));
+                  }
+                }}
                 inputMode="numeric"
               />
             </Field>
@@ -704,7 +713,7 @@ function ParentAdmissionFormInner() {
                 ))}
               </select>
             </Field>
-            <Field label="Social Category (General / OBC / SC / ST)">
+            <Field label="Social Category">
               <select
                 className={selectClass}
                 value={form.category}
@@ -723,202 +732,6 @@ function ParentAdmissionFormInner() {
                 onChange={(languages) => set("languages", languages)}
                 placeholder="Add language..."
               />
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Parents & Guardian Information"
-          icon={
-            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M16 11a4 4 0 100-8 4 4 0 000 8zM8 11a4 4 0 100-8 4 4 0 000 8zm0 2c-3.3 0-6 1.8-6 4v1h12v-1c0-2.2-2.7-4-6-4zm8 0c-.4 0-.8 0-1.2.1 1.3.9 2.2 2.2 2.2 3.9v1H22v-1c0-2.2-2.7-4-6-4z" />
-            </svg>
-          }
-        >
-          <div className="space-y-8">
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                Father&apos;s Info
-              </h3>
-              <PhotoUpload
-                value={form.father.photo}
-                onChange={(photo) => setNested("father", { photo })}
-              />
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="Father Name">
-                  <input
-                    className={inputClass}
-                    value={form.father.name}
-                    onChange={(e) =>
-                      setNested("father", { name: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Email">
-                  <input
-                    type="email"
-                    className={inputClass}
-                    value={form.father.email}
-                    onChange={(e) =>
-                      setNested("father", { email: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Phone Number">
-                  <input
-                    className={inputClass}
-                    value={form.father.phone}
-                    onChange={(e) =>
-                      setNested("father", {
-                        phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Father Occupation">
-                  <input
-                    className={inputClass}
-                    value={form.father.occupation}
-                    onChange={(e) =>
-                      setNested("father", { occupation: e.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                Mother&apos;s Info
-              </h3>
-              <PhotoUpload
-                value={form.mother.photo}
-                onChange={(photo) => setNested("mother", { photo })}
-              />
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="Mother Name">
-                  <input
-                    className={inputClass}
-                    value={form.mother.name}
-                    onChange={(e) =>
-                      setNested("mother", { name: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Email">
-                  <input
-                    type="email"
-                    className={inputClass}
-                    value={form.mother.email}
-                    onChange={(e) =>
-                      setNested("mother", { email: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Phone Number">
-                  <input
-                    className={inputClass}
-                    value={form.mother.phone}
-                    onChange={(e) =>
-                      setNested("mother", {
-                        phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Mother Occupation">
-                  <input
-                    className={inputClass}
-                    value={form.mother.occupation}
-                    onChange={(e) =>
-                      setNested("mother", { occupation: e.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                Guardian Details
-              </h3>
-              <p className="mb-3 text-sm text-gray-600">If Guardian Is</p>
-              <div className="mb-4 flex flex-wrap gap-4">
-                {["Father", "Mother", "Other"].map((opt) => (
-                  <label
-                    key={opt}
-                    className="inline-flex items-center gap-2 text-sm text-gray-800"
-                  >
-                    <input
-                      type="radio"
-                      name="guardianIs"
-                      checked={form.guardianIs === opt}
-                      onChange={() => set("guardianIs", opt)}
-                      className="accent-green-700"
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-              {form.guardianIs === "Other" ? (
-                <>
-                  <PhotoUpload
-                    value={form.guardian.photo}
-                    onChange={(photo) => setNested("guardian", { photo })}
-                  />
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Field label="Guardian Name">
-                      <input
-                        className={inputClass}
-                        value={form.guardian.name}
-                        onChange={(e) =>
-                          setNested("guardian", { name: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Guardian Relation">
-                      <input
-                        className={inputClass}
-                        value={form.guardian.relation}
-                        onChange={(e) =>
-                          setNested("guardian", { relation: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Phone Number">
-                      <input
-                        className={inputClass}
-                        value={form.guardian.phone}
-                        onChange={(e) =>
-                          setNested("guardian", {
-                            phone: e.target.value
-                              .replace(/\D/g, "")
-                              .slice(0, 10),
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Occupation">
-                      <input
-                        className={inputClass}
-                        value={form.guardian.occupation}
-                        onChange={(e) =>
-                          setNested("guardian", { occupation: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Address" className="sm:col-span-2 lg:col-span-3">
-                      <input
-                        className={inputClass}
-                        value={form.guardian.address}
-                        onChange={(e) =>
-                          setNested("guardian", { address: e.target.value })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </>
-              ) : null}
             </div>
           </div>
         </SectionCard>
@@ -1202,9 +1015,16 @@ function ParentAdmissionFormInner() {
             />
             <DocUpload
               label="Aadhar Card / ID (Identity Proof)"
+              required
+              error={errors.aadharDoc}
               hint="Upload image size of 4MB, Accepted Format PDF"
               value={form.docs.aadhar}
-              onChange={(aadhar) => setNested("docs", { aadhar })}
+              onChange={(aadhar) => {
+                setNested("docs", { aadhar });
+                if (aadhar) {
+                  setErrors((p) => ({ ...p, aadharDoc: "" }));
+                }
+              }}
             />
           </div>
         </SectionCard>
@@ -1217,40 +1037,48 @@ function ParentAdmissionFormInner() {
             </svg>
           }
         >
-          <p className="mb-2 text-sm font-medium text-gray-800">
-            Medical Condition of a Student
+          <p className="mb-3 text-sm text-gray-700">
+            Does the student have any medical history, allergies, or regular medications?
           </p>
-          <div className="mb-4 flex flex-wrap gap-4">
-            {["Good", "Bad", "Other"].map((opt) => (
-              <label
-                key={opt}
-                className="inline-flex items-center gap-2 text-sm"
+          <div className="mb-4 flex gap-2">
+            {[true, false].map((v) => (
+              <button
+                key={String(v)}
+                type="button"
+                onClick={() => {
+                  set("hasMedicalHistory", v);
+                  if (!v) {
+                    set("allergies", []);
+                    set("medications", []);
+                  }
+                }}
+                className={`rounded-full px-4 py-1.5 text-sm font-medium ${
+                  (form.hasMedicalHistory ?? false) === v
+                    ? "bg-green-800 text-white"
+                    : "border border-gray-300 bg-white text-gray-700"
+                }`}
               >
-                <input
-                  type="radio"
-                  name="medicalCondition"
-                  checked={form.medicalCondition === opt}
-                  onChange={() => set("medicalCondition", opt)}
-                  className="accent-green-700"
-                />
-                {opt}
-              </label>
+                {v ? "Yes" : "No"}
+              </button>
             ))}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TagInput
-              label="Allergies"
-              values={form.allergies}
-              onChange={(allergies) => set("allergies", allergies)}
-              placeholder="Add allergy..."
-            />
-            <TagInput
-              label="Medications"
-              values={form.medications}
-              onChange={(medications) => set("medications", medications)}
-              placeholder="Add medication..."
-            />
-          </div>
+
+          {form.hasMedicalHistory ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <TagInput
+                label="Allergies"
+                values={form.allergies}
+                onChange={(allergies) => set("allergies", allergies)}
+                placeholder="Add allergy..."
+              />
+              <TagInput
+                label="Medications"
+                values={form.medications}
+                onChange={(medications) => set("medications", medications)}
+                placeholder="Add medication..."
+              />
+            </div>
+          ) : null}
         </SectionCard>
 
         <SectionCard

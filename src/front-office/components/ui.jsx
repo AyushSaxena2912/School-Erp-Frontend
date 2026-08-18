@@ -122,7 +122,7 @@ export function SlideOver({ open, title, onClose, children }) {
 
 export function Field({ label, required, error, hint, children, className }) {
   return (
-    <div className={className}>
+    <div className={`flex flex-col justify-end ${className || ""}`}>
       <label className="mb-1.5 block text-sm font-medium text-gray-800">
         {label}
         {required ? <span className="text-red-500"> *</span> : null}

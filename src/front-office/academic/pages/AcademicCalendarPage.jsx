@@ -511,9 +511,7 @@ export default function AcademicCalendarPage() {
                     {opt.label}
                   </button>
                 ))}
-                <div className="cal-pdf-note">
-                  Opens browser print dialog → Save as PDF
-                </div>
+
               </div>
             )}
           </div>

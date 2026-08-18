@@ -52,7 +52,7 @@ export const initialSubjects = [
   { id: "sub-4", code: "CHE101", name: "Chemistry", type: "Practical", status: "Active" },
   { id: "sub-5", code: "BIO101", name: "Biology", type: "Practical", status: "Active" },
   { id: "sub-6", code: "HIS101", name: "History", type: "Theory", status: "Active" },
-  { id: "sub-7", code: "GEO101", name: "Geography", type: "Theory", status: "Active" },
+  { id: "sub-7", code: "GEO101", name: "Geography", type: "Theory", status: "Active", isOpenLearning: true },
   { id: "sub-8", code: "COM101", name: "Computer", type: "Practical", status: "Active", isAdditional: true },
   { id: "sub-9", code: "HIN101", name: "Hindi", type: "Theory", status: "Inactive" },
   { id: "sub-10", code: "ECO101", name: "Economics", type: "Theory", status: "Active", isAdditional: true },

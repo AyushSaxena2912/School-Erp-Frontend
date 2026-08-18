@@ -101,6 +101,7 @@ const emptyForm = {
   type: "Theory",
   status: "Active",
   isAdditional: false,
+  isOpenLearning: false,
 };
 
 export default function SubjectsPage() {
@@ -130,6 +131,7 @@ export default function SubjectsPage() {
       type: row.type,
       status: row.status,
       isAdditional: !!row.isAdditional,
+      isOpenLearning: !!row.isOpenLearning,
     });
     setError("");
     setModalOpen(true);
@@ -147,6 +149,7 @@ export default function SubjectsPage() {
       type: form.type,
       status: form.status,
       isAdditional: !!form.isAdditional,
+      isOpenLearning: !!form.isOpenLearning,
     };
     if (editing) {
       updateSubject({ id: editing.id, ...payload });
@@ -157,9 +160,9 @@ export default function SubjectsPage() {
   };
 
   const exportCsv = () => {
-    const header = ["Code", "Name", "Type", "Status", "Is Additional"];
+    const header = ["Code", "Name", "Type", "Status", "Is Additional", "Is Open Learning"];
     const lines = subjects.map((r) =>
-      [r.code, r.name, r.type, r.status, r.isAdditional ? "Yes" : "No"]
+      [r.code, r.name, r.type, r.status, r.isAdditional ? "Yes" : "No", r.isOpenLearning ? "Yes" : "No"]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(",")
     );
@@ -190,7 +193,7 @@ export default function SubjectsPage() {
       const errors = [];
       lines.slice(1).forEach((line, idx) => {
         const cols = line.replace(/^"|"|"$/g, "").split(/","/).map((v) => v.trim());
-        const [sCode = "", sName, sType = "Theory", sStatus = "Active", sAdd = "No"] = cols;
+        const [sCode = "", sName, sType = "Theory", sStatus = "Active", sAdd = "No", sOpen = "No"] = cols;
         if (!sName) { errors.push(`Row ${idx + 2}: Name is empty.`); skipped++; return; }
         if (existingNames.has(sName.toLowerCase())) { skipped++; return; }
         addSubject({
@@ -199,6 +202,7 @@ export default function SubjectsPage() {
           type: SUBJECT_TYPES.includes(sType) ? sType : "Theory",
           status: ["Active","Inactive"].includes(sStatus) ? sStatus : "Active",
           isAdditional: sAdd.toLowerCase() === "yes" || sAdd === "true" || sAdd === "1",
+          isOpenLearning: sOpen.toLowerCase() === "yes" || sOpen === "true" || sOpen === "1",
         });
         existingNames.add(sName.toLowerCase());
         imported++;
@@ -316,9 +320,14 @@ export default function SubjectsPage() {
                   <td>
                     <div>
                       <span className="ac-name">{row.name}</span>
-                      {row.isAdditional && (
-                        <div className="text-[11px] text-amber-600 font-medium mt-0.5">Additional Subject</div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        {row.isAdditional && (
+                          <div className="text-[11px] text-amber-600 font-medium">Additional Subject</div>
+                        )}
+                        {row.isOpenLearning && (
+                          <div className="text-[11px] text-blue-600 font-medium">Open Learning Subject</div>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -446,6 +455,31 @@ export default function SubjectsPage() {
                   checked={!!form.isAdditional}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, isAdditional: e.target.checked }))
+                  }
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--ac-green)] peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
+              </label>
+            </div>
+          </Field>
+
+          {/* ── Open Learning Subject Toggle ── */}
+          <Field label="Open Learning Subject">
+            <div className="flex items-center justify-between rounded-lg border border-[var(--ac-border)] bg-gray-50/60 p-3">
+              <div>
+                <div className="text-xs font-semibold text-[var(--ac-text)]">
+                  Is this an Open Learning Subject?
+                </div>
+                <div className="text-[11px] text-[var(--ac-muted)]">
+                  Enable if this is an open learning subject.
+                </div>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={!!form.isOpenLearning}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, isOpenLearning: e.target.checked }))
                   }
                 />
                 <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--ac-green)] peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>

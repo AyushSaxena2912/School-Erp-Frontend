@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 
 export function StatusBadge({ status }) {
   const map = {
@@ -99,7 +100,7 @@ export function SlideOver({ open, title, onClose, children }) {
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-black/20 backdrop-blur-[1px]"
         aria-label="Close"
         onClick={onClose}
       />
@@ -109,9 +110,10 @@ export function SlideOver({ open, title, onClose, children }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            aria-label="Close"
           >
-            ✕
+            <X className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 p-5">{children}</div>

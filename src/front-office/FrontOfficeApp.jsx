@@ -13,6 +13,7 @@ import {
   CreateRoutinePage,
 } from "./academic";
 import { NoticesProvider, NoticeBoardPage } from "./announcements";
+import { TeachersPage, AddTeacherPage, TeacherDetailsPage, TeacherRecruitmentsPage } from "./teachers";
 import FrontOfficeLayout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import EnquiriesPage from "./pages/EnquiriesPage";
@@ -43,6 +44,11 @@ export default function FrontOfficeApp() {
             <Route path="branches" element={<BranchesPage />} />
             <Route path="branches/new" element={<BranchFormPage />} />
             <Route path="branches/:id/edit" element={<BranchFormPage />} />
+            <Route path="teachers" element={<TeachersPage />} />
+            <Route path="teachers/recruitments" element={<TeacherRecruitmentsPage />} />
+            <Route path="teachers/new" element={<AddTeacherPage />} />
+            <Route path="teachers/:id" element={<TeacherDetailsPage />} />
+            <Route path="teachers/:id/edit" element={<AddTeacherPage />} />
             <Route path="academic/classes" element={<ClassesPage />} />
             <Route path="academic/sections" element={<SectionsPage />} />
             <Route path="academic/classrooms" element={<ClassroomsPage />} />

@@ -5,7 +5,6 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   optimizeDeps: {
-    noDiscovery: true,
     include: [
       "react",
       "react-dom",
@@ -13,10 +12,11 @@ export default defineConfig({
       "react-router-dom",
       "react/jsx-dev-runtime",
       "react/jsx-runtime",
+      "lucide-react",
     ],
   },
   server: {
-    host: "127.0.0.1",
+    host: true,
     port: 5173,
     strictPort: true,
     proxy: {

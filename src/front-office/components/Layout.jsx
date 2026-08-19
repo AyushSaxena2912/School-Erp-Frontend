@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
+import { Calendar, ChevronDown } from "lucide-react";
 import { formatFollowUpTimeLabel, getFollowUpUrgency, getNextPendingFollowUp } from "../data/seed";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import Sidebar from "./sidebar/Sidebar";
@@ -27,6 +28,7 @@ export default function FrontOfficeLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
+  const [academicYear, setAcademicYear] = useState("2026 / 2027");
   const due = useDueFollowUps(enquiries, currentUser);
   const overdueCount = due.filter((e) => {
     const nextFu = getNextPendingFollowUp(e);
@@ -138,6 +140,28 @@ export default function FrontOfficeLayout() {
                   )}
                 </div>
               ) : null}
+            </div>
+
+            {/* Academic Year Selector */}
+            <div className="relative flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:border-gray-300 transition-colors shrink-0">
+              <Calendar className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+              <span className="text-gray-500 font-medium hidden md:inline">
+                Academic Year :
+              </span>
+              <div className="relative flex items-center">
+                <select
+                  value={academicYear}
+                  onChange={(e) => setAcademicYear(e.target.value)}
+                  className="appearance-none bg-transparent font-semibold text-gray-900 outline-none cursor-pointer pr-4 text-xs"
+                  aria-label="Academic Year"
+                >
+                  <option value="2026 / 2027">2026 / 2027</option>
+                  <option value="2025 / 2026">2025 / 2026</option>
+                  <option value="2024 / 2025">2024 / 2025</option>
+                  <option value="2027 / 2028">2027 / 2028</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-0 h-3 w-3 text-gray-400" />
+              </div>
             </div>
 
             <div className="relative">

@@ -99,7 +99,8 @@ export const SIDEBAR_GROUPS = [
         icon: "teachers",
         roles: ADMINS,
         children: [
-          { label: "All Teachers", to: cs("All Teachers"), roles: ADMINS },
+          { label: "All Teachers", to: "/front-office/teachers", end: true, roles: ADMINS },
+          { label: "Add Teacher", to: "/front-office/teachers/new", roles: ADMINS },
         ],
       },
     ],

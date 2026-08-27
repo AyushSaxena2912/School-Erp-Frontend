@@ -67,23 +67,26 @@ export default function EnquiryFormPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-gray-500">
-          <Link
-            to="/front-office/enquiries"
-            className="text-green-700 hover:underline"
-          >
-            Admission Inquiry
-          </Link>
-          <span className="mx-1.5 text-gray-300">/</span>
-          {isEdit ? "Edit" : "New"}
-        </p>
-        <h2 className="text-2xl font-bold text-gray-900">
-          {isEdit ? "Edit Inquiry" : "New Admission Inquiry"}
-        </h2>
-        <p className="text-sm text-gray-500">
-          Step 1 — capture student name, class, and parent contact only.
-        </p>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate("/front-office/enquiries")}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:border-gray-300 hover:text-green-700 transition-all cursor-pointer"
+          title="Back"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+            {isEdit ? "Edit Inquiry" : "New Admission Inquiry"}
+          </h2>
+          <p className="text-xs text-gray-500">
+            Step 1 — capture student name, class, and parent contact details.
+          </p>
+        </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">

@@ -1,5 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Building2, Camera, MoreVertical, Pencil, Trash2, Upload } from "lucide-react";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import {
   Field,
@@ -10,6 +11,65 @@ import {
   btnSecondary,
   EmptyState,
 } from "../components/ui";
+
+function BranchActionMenu({ branch, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative inline-block text-left" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer"
+        title="Actions"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-32 origin-top-right rounded-lg border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer"
+            onClick={() => {
+              setOpen(false);
+              onEdit();
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5 text-gray-500" />
+            <span>Edit</span>
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+            <span>Delete</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function isImageLogo(logo) {
   return Boolean(
@@ -26,6 +86,7 @@ function normalizeProfileLogo(logo) {
 
 export default function BranchesPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const profileFileRef = useRef(null);
   const {
     schoolProfile,
@@ -35,14 +96,33 @@ export default function BranchesPage() {
     deleteBranch,
   } = useFrontOffice();
 
-  const [activeTab, setActiveTab] = useState("branches");
+  const activeTab = searchParams.get("tab") === "profile" ? "profile" : "branches";
+
+  const setActiveTab = (tab) => {
+    if (tab === "profile") {
+      setSearchParams({ tab: "profile" }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [profileForm, setProfileForm] = useState(() => ({
     ...schoolProfile,
-    logo: normalizeProfileLogo(schoolProfile.logo),
+    logo: normalizeProfileLogo(schoolProfile?.logo),
   }));
+
+  useEffect(() => {
+    if (schoolProfile) {
+      setProfileForm({
+        ...schoolProfile,
+        logo: normalizeProfileLogo(schoolProfile.logo),
+      });
+    }
+  }, [schoolProfile]);
+
   const [profileLogoName, setProfileLogoName] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState("");
@@ -139,7 +219,7 @@ export default function BranchesPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
             {schoolProfile.name} Setup
@@ -148,58 +228,66 @@ export default function BranchesPage() {
             Institution profile and school branches
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {activeTab === "branches" && (
+          <Link to="/front-office/branches/new" className={btnPrimary}>
+            + Create Branch
+          </Link>
+        )}
+      </div>
+
+      {/* Sleek Horizontal Tab Bar */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-6">
           <button
             type="button"
-            className={activeTab === "branches" ? btnPrimary : btnSecondary}
             onClick={() => setActiveTab("branches")}
+            className={`cursor-pointer pb-3 text-sm font-semibold border-b-2 transition-colors ${
+              activeTab === "branches"
+                ? "border-green-700 text-green-800"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
           >
             Branches ({branchCount})
           </button>
           <button
             type="button"
-            className={activeTab === "profile" ? btnPrimary : btnSecondary}
             onClick={() => setActiveTab("profile")}
+            className={`cursor-pointer pb-3 text-sm font-semibold border-b-2 transition-colors ${
+              activeTab === "profile"
+                ? "border-green-700 text-green-800"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
           >
             School Profile
           </button>
-        </div>
+        </nav>
       </div>
 
       {activeTab === "branches" && (
-        <div className="space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-1 flex-wrap items-end gap-3 min-w-[240px]">
-              <div className="min-w-[220px] flex-1 max-w-md">
-                <label className="mb-1.5 block text-sm font-medium text-gray-800">
-                  Search
-                </label>
+        <div className="space-y-4">
+          <div className="rounded-lg bg-white p-4 border border-gray-200">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              <Field label="Search">
                 <input
                   type="text"
-                  placeholder="Name, code, principal…"
+                  placeholder="Search branch name, code..."
                   className={inputClass}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-              </div>
-              <div className="w-40">
-                <label className="mb-1.5 block text-sm font-medium text-gray-800">
-                  Status
-                </label>
+              </Field>
+              <Field label="Status">
                 <select
                   className={selectClass}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  <option value="All">All</option>
+                  <option value="All">All Statuses</option>
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-              </div>
+              </Field>
             </div>
-            <Link to="/front-office/branches/new" className={btnPrimary}>
-              + Create Branch
-            </Link>
           </div>
 
           {filteredBranches.length === 0 ? (
@@ -267,24 +355,15 @@ export default function BranchesPage() {
                             <StatusBadge status={b.status} />
                           </button>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              className={btnSecondary}
-                              onClick={() =>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end">
+                            <BranchActionMenu
+                              branch={b}
+                              onEdit={() =>
                                 navigate(`/front-office/branches/${b.id}/edit`)
                               }
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteBranch(b.id, b.name)}
-                            >
-                              Delete
-                            </button>
+                              onDelete={() => handleDeleteBranch(b.id, b.name)}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -318,69 +397,61 @@ export default function BranchesPage() {
               <h3 className="text-base font-semibold text-gray-900">
                 Institution profile
               </h3>
-              <p className="text-sm text-gray-500">
-                Defaults used across branches and communications.
-              </p>
             </div>
 
-            <section className="space-y-3">
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">Logo</h4>
-                <p className="text-xs text-gray-500">
-                  School / group logo. PNG, JPG, WEBP or SVG · max 1.5 MB
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 sm:flex-row sm:items-center">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <section className="flex items-center gap-5">
+              <div className="relative group">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white p-1 text-gray-400 transition group-hover:border-green-600 shadow-xs">
                   {isImageLogo(profileForm.logo) ? (
                     <img
                       src={profileForm.logo}
-                      alt="Institution logo preview"
-                      className="h-full w-full object-cover"
+                      alt="Institution logo"
+                      className="h-full w-full object-contain"
                     />
                   ) : (
-                    <span className="px-2 text-center text-xs text-gray-400">
-                      No logo
-                    </span>
+                    <Building2 className="h-8 w-8 text-gray-300 group-hover:text-green-600 transition" />
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => profileFileRef.current?.click()}
+                  className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-green-700 text-white shadow-md hover:bg-green-800 transition cursor-pointer"
+                  title="Upload logo"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                </button>
+              </div>
 
-                <div className="min-w-0 flex-1 space-y-2">
-                  <input
-                    ref={profileFileRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
-                    className="hidden"
-                    onChange={handleProfileLogoFile}
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-1">
+                <input
+                  ref={profileFileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleProfileLogoFile}
+                />
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    onClick={() => profileFileRef.current?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5 text-gray-500 mr-1.5 inline" />
+                    {isImageLogo(profileForm.logo) ? "Change logo" : "Upload logo"}
+                  </button>
+                  {isImageLogo(profileForm.logo) ? (
                     <button
                       type="button"
-                      className={btnSecondary}
-                      onClick={() => profileFileRef.current?.click()}
+                      className="text-xs font-semibold text-red-600 hover:text-red-700 hover:underline px-1.5 py-1 cursor-pointer"
+                      onClick={clearProfileLogo}
                     >
-                      {isImageLogo(profileForm.logo)
-                        ? "Change logo"
-                        : "Upload logo"}
+                      Remove
                     </button>
-                    {isImageLogo(profileForm.logo) ? (
-                      <button
-                        type="button"
-                        className="rounded-md px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                        onClick={clearProfileLogo}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="truncate text-xs text-gray-500">
-                    {profileLogoName ||
-                      (isImageLogo(profileForm.logo)
-                        ? "Current logo on file"
-                        : "No file selected")}
-                  </p>
+                  ) : null}
                 </div>
+                <p className="text-xs text-gray-500">
+                  Recommended: PNG, JPG, or SVG up to 1.5 MB
+                </p>
               </div>
             </section>
 
@@ -389,9 +460,6 @@ export default function BranchesPage() {
                 <h4 className="text-sm font-semibold text-gray-900">
                   Institution details
                 </h4>
-                <p className="text-xs text-gray-500">
-                  Legal / group name and affiliation.
-                </p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -407,7 +475,7 @@ export default function BranchesPage() {
                     onChange={(e) =>
                       setProfileForm((p) => ({ ...p, name: e.target.value }))
                     }
-                    placeholder="e.g. Delhi Public School"
+                    placeholder="Enter institution name"
                   />
                 </Field>
 
@@ -437,7 +505,7 @@ export default function BranchesPage() {
                         establishedYear: e.target.value,
                       }))
                     }
-                    placeholder="e.g. 1998"
+                    placeholder="e.g. 2000"
                   />
                 </Field>
               </div>
@@ -446,9 +514,6 @@ export default function BranchesPage() {
             <section className="space-y-4 border-t border-gray-100 pt-6">
               <div>
                 <h4 className="text-sm font-semibold text-gray-900">Contact</h4>
-                <p className="text-xs text-gray-500">
-                  Primary HQ contact used in communications.
-                </p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -460,7 +525,7 @@ export default function BranchesPage() {
                     onChange={(e) =>
                       setProfileForm((p) => ({ ...p, phone: e.target.value }))
                     }
-                    placeholder="+91 …"
+                    placeholder="Phone number"
                   />
                 </Field>
 
@@ -472,7 +537,7 @@ export default function BranchesPage() {
                     onChange={(e) =>
                       setProfileForm((p) => ({ ...p, email: e.target.value }))
                     }
-                    placeholder="info@school.edu"
+                    placeholder="info@example.com"
                   />
                 </Field>
 
@@ -484,7 +549,7 @@ export default function BranchesPage() {
                     onChange={(e) =>
                       setProfileForm((p) => ({ ...p, website: e.target.value }))
                     }
-                    placeholder="www.school.edu"
+                    placeholder="https://example.com"
                   />
                 </Field>
 
@@ -498,7 +563,7 @@ export default function BranchesPage() {
                     onChange={(e) =>
                       setProfileForm((p) => ({ ...p, address: e.target.value }))
                     }
-                    placeholder="Registered office address"
+                    placeholder="Enter registered office address"
                   />
                 </Field>
               </div>

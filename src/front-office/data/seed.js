@@ -7,11 +7,45 @@ const daysFromNow = (n) => {
 };
 const daysAgo = (n) => daysFromNow(-n);
 
+export function formatDateDMY(str) {
+  if (!str) return "—";
+  const clean = String(str).split(" ")[0].split("T")[0];
+  const parts = clean.split("-");
+  if (parts.length === 3 && parts[0].length === 4) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return str;
+}
+
+export function formatDateTimeDMY(str) {
+  if (!str) return "—";
+  try {
+    const s = String(str).trim();
+    const parts = s.includes("T") ? s.split("T") : s.split(" ");
+    const rawDate = parts[0];
+    const rawTime = parts[1] || "";
+    let dmy = rawDate;
+    const dateParts = rawDate.split("-");
+    if (dateParts.length === 3 && dateParts[0].length === 4) {
+      const [y, m, d] = dateParts;
+      dmy = `${d}/${m}/${y}`;
+    }
+    if (!rawTime) return dmy;
+    const timeClean = rawTime.split(".")[0];
+    const timeParts = timeClean.split(":");
+    const timeStr = timeParts.length >= 2 ? `${timeParts[0]}:${timeParts[1]}` : rawTime;
+    return `${dmy} ${timeStr}`;
+  } catch {
+    return str;
+  }
+}
+
 export const CURRENT_USER = {
-  id: "staff-1",
-  name: "Garvita Goyal",
-  role: "Front Desk Admin",
-  email: "garvita@school.edu",
+  id: "admin",
+  name: "Administrator",
+  role: "Administrator",
+  email: "admin@school.edu",
 };
 
 /** Admission pipeline statuses (Steps 1–6). */
@@ -32,10 +66,13 @@ export function makeAdmissionToken() {
   return `adm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function makeAdmissionNumber() {
+export function makeAdmissionNumber(enquiryId) {
   const y = new Date().getFullYear();
+  if (enquiryId && String(enquiryId).includes("-")) {
+    return `STU-${y}-${String(enquiryId).split("-").pop()}`;
+  }
   const n = String(Math.floor(1000 + Math.random() * 9000));
-  return `ADM${y}${n}`;
+  return `STU-${y}-${n}`;
 }
 
 export function makeTempPassword() {
@@ -47,36 +84,7 @@ export function makeParentActivationToken() {
 }
 
 
-export const initialStaff = [
-  {
-    id: "staff-1",
-    name: "Garvita Goyal",
-    employeeId: "EMP1001",
-    role: "Front Desk Admin",
-    active: true,
-  },
-  {
-    id: "staff-2",
-    name: "Rahul Mehta",
-    employeeId: "EMP1002",
-    role: "Admission Counselor",
-    active: true,
-  },
-  {
-    id: "staff-3",
-    name: "Ananya Iyer",
-    employeeId: "TCH2045",
-    role: "Receptionist",
-    active: true,
-  },
-  {
-    id: "staff-4",
-    name: "Vikram Singh",
-    employeeId: "TCH3012",
-    role: "Academic Coordinator",
-    active: true,
-  },
-];
+export const initialStaff = [];
 
 export const initialClasses = [
   { id: "cls-1", name: "Nursery", feeStructureId: "fee-1" },
@@ -361,7 +369,24 @@ export function formatStudentLabel({
     .join(" · ");
 }
 
-export const initialCustomFields = [];
+export const initialCustomFields = [
+  {
+    id: "cf-garam",
+    label: "garam",
+    type: "Text",
+    required: false,
+    options: [],
+    placeholder: "Enter garam",
+  },
+  {
+    id: "cf-paani",
+    label: "paani",
+    type: "Text",
+    required: false,
+    options: [],
+    placeholder: "Enter paani",
+  },
+];
 
 /** Join first / middle / last into a display name. */
 export function joinNameParts(first, middle, last) {
@@ -581,16 +606,7 @@ export const initialSystemFields = [
     active: true,
     system: true,
   },
-  {
-    id: "sys-assignedTo",
-    key: "assignedTo",
-    label: "Assigned To",
-    type: "Staff",
-    source: "staff",
-    required: false,
-    active: false,
-    system: true,
-  },
+
   {
     id: "sys-enquiryDetails",
     key: "enquiryDetails",
@@ -602,337 +618,9 @@ export const initialSystemFields = [
   },
 ];
 
-export const initialEnquiries = [
-  {
-    id: "enq-1",
-    studentName: "Ishaan Verma",
-    parentName: "Suresh Verma",
-    guardianRelation: "Father",
-    contact: "9876543210",
-    classId: "cls-4",
-    feeStructureId: "fee-2",
-    referral: "Walk-in",
-    assignedTo: "staff-1",
-    status: "Follow-up Pending",
-    leadType: "Hot Lead",
-    customValues: {},
-    createdAt: daysAgo(5),
-    converted: false,
-    followUps: [
-      {
-        id: "fu-1",
-        decisionDays: 5,
-        dateToCall: daysAgo(1),
-        notes: "Parents visiting campus next week. Interested in Class 1.",
-        outcome: "Needs Another Follow-up",
-        createdAt: daysAgo(5),
-      },
-      {
-        id: "fu-2",
-        decisionDays: 3,
-        dateToCall: iso(today),
-        timeToCall: "11:00",
-        timeType: "at",
-        timeToCallEnd: "",
-        notes: "Call to confirm campus visit slot.",
-        outcome: "Not Called Yet",
-        createdAt: daysAgo(1),
-      },
-    ],
-  },
-  {
-    id: "enq-2",
-    studentName: "Saanvi Nair",
-    parentName: "Rajesh Nair",
-    guardianFirstName: "Rajesh",
-    guardianLastName: "Nair",
-    guardianRelation: "Father",
-    guardian2FirstName: "Lakshmi",
-    guardian2LastName: "Nair",
-    guardian2Relation: "Mother",
-    includeSecondGuardian: true,
-    contact: "9123456780",
-    classId: "cls-1",
-    feeStructureId: "fee-1",
-    referral: "Existing Parent",
-    assignedTo: "staff-2",
-    status: "Follow-up Pending",
-    leadType: "Warm Lead",
-    customValues: {},
-    createdAt: daysAgo(3),
-    converted: false,
-    followUps: [
-      {
-        id: "fu-3",
-        decisionDays: 7,
-        dateToCall: daysFromNow(2),
-        notes: "Very interested. Waiting for sibling school decision.",
-        outcome: "Interested",
-        createdAt: daysAgo(3),
-      },
-      {
-        id: "fu-3b",
-        decisionDays: null,
-        dateToCall: daysFromNow(2),
-        timeToCall: "16:00",
-        timeType: "after",
-        timeToCallEnd: "",
-        notes: "",
-        outcome: "Not Called Yet",
-        createdAt: daysAgo(3),
-      },
-    ],
-  },
-  {
-    id: "enq-3",
-    studentName: "Arjun Desai",
-    parentName: "Mehul Desai",
-    guardianRelation: "Father",
-    contact: "9988776655",
-    classId: "cls-6",
-    feeStructureId: "fee-3",
-    referral: "Website",
-    assignedTo: "staff-1",
-    status: "Follow-up Pending",
-    leadType: "Cold Lead",
-    customValues: {},
-    createdAt: daysAgo(10),
-    converted: false,
-    followUps: [
-      {
-        id: "fu-4",
-        decisionDays: 4,
-        dateToCall: daysAgo(3),
-        notes: "No answer. Try again.",
-        outcome: "Needs Another Follow-up",
-        createdAt: daysAgo(10),
-      },
-      {
-        id: "fu-5",
-        decisionDays: 3,
-        dateToCall: daysAgo(2),
-        timeToCall: "10:00",
-        timeType: "between",
-        timeToCallEnd: "12:00",
-        notes: "Overdue — still waiting for callback.",
-        outcome: "Not Called Yet",
-        createdAt: daysAgo(3),
-      },
-    ],
-  },
-  {
-    id: "enq-4",
-    studentName: "Kiara Malhotra",
-    parentName: "Neha Malhotra",
-    guardianRelation: "Mother",
-    contact: "9001122334",
-    classId: "cls-2",
-    feeStructureId: "fee-1",
-    referral: "Staff Referral",
-    referralDetail: "Ananya Iyer",
-    assignedTo: "staff-3",
-    status: "New",
-    leadType: "Warm Lead",
-    customValues: {},
-    createdAt: daysAgo(1),
-    converted: false,
-    followUps: [],
-  },
-  {
-    id: "enq-5",
-    studentName: "Vivaan Khan",
-    parentName: "Imran Khan",
-    guardianRelation: "Father",
-    contact: "9556677889",
-    classId: "cls-8",
-    feeStructureId: "fee-4",
-    referral: "Website",
-    assignedTo: "staff-2",
-    status: "Admitted",
-    leadType: "Closed",
-    customValues: {},
-    createdAt: daysAgo(20),
-    converted: true,
-    followUps: [
-      {
-        id: "fu-6",
-        decisionDays: 5,
-        dateToCall: daysAgo(15),
-        notes: "Completed admission formalities.",
-        outcome: "Admitted",
-        createdAt: daysAgo(18),
-      },
-    ],
-  },
-].map(normalizeEnquiryNames);
-
-export const initialVisitors = [
-  {
-    id: "vis-1",
-    name: "Ramesh Kumar",
-    purpose: "Vendor",
-    relation: "",
-    contact: "9811122233",
-    studentId: "",
-    studentName: "",
-    className: "",
-    scholarNumber: "",
-    whomToMeet: "Accounts Office",
-    checkIn: `${iso(today)}T09:15`,
-    checkOut: null,
-    remarks: "Uniform supplier meeting",
-  },
-  {
-    id: "vis-2",
-    name: "Sunita Devi",
-    purpose: "Meet Staff",
-    relation: "Mother",
-    contact: "9822233344",
-    studentId: "stu-1",
-    studentName: "Aarav Patel",
-    className: "Class 5",
-    section: "A",
-    scholarNumber: "SCH2024001",
-    whomToMeet: "Class Teacher - 5A",
-    checkIn: `${iso(today)}T10:05`,
-    checkOut: `${iso(today)}T10:45`,
-    remarks: "Parent-teacher discussion",
-  },
-  {
-    id: "vis-4",
-    name: "Rohit Kapoor",
-    purpose: "Meet Student",
-    relation: "Father",
-    contact: "9844455566",
-    studentId: "stu-2",
-    studentName: "Diya Kapoor",
-    className: "Class 2",
-    section: "B",
-    scholarNumber: "SCH2024012",
-    whomToMeet: "",
-    checkIn: `${iso(today)}T12:10`,
-    checkOut: null,
-    remarks: "Came to meet daughter",
-  },
-  {
-    id: "vis-3",
-    name: "Ajay Bhatt",
-    purpose: "General Inquiry",
-    relation: "",
-    contact: "9833344455",
-    studentId: "",
-    studentName: "",
-    className: "",
-    scholarNumber: "",
-    whomToMeet: "Priya Sharma",
-    checkIn: `${iso(today)}T11:30`,
-    checkOut: null,
-    remarks: "Asked about mid-year admission",
-  },
-];
-
-export const initialComplaints = [
-  {
-    id: "cmp-1",
-    complainantName: "Pooja Patel",
-    relation: "Mother",
-    contact: "9876501234",
-    studentId: "stu-1",
-    studentName: "Aarav Patel",
-    className: "Class 5",
-    section: "A",
-    scholarNumber: "SCH2024001",
-    nature: "Transport",
-    natureOther: "",
-    description: "Bus arriving 20 minutes late for the last one week.",
-    mode: "Offline",
-    raisedBy: "Front Office",
-    recordedBy: "Front Desk",
-    status: "New",
-    resolutionNotes: "",
-    createdAt: daysAgo(1),
-  },
-  {
-    id: "cmp-2",
-    complainantName: "Rohit Kapoor",
-    relation: "Father",
-    contact: "9876505678",
-    studentId: "stu-2",
-    studentName: "Diya Kapoor",
-    className: "Class 2",
-    section: "B",
-    scholarNumber: "SCH2024012",
-    nature: "Facility",
-    natureOther: "",
-    description: "Classroom AC not working in 2B.",
-    mode: "Offline",
-    raisedBy: "Front Office",
-    recordedBy: "Front Desk",
-    status: "In Progress",
-    resolutionNotes: "Maintenance team notified.",
-    createdAt: daysAgo(4),
-  },
-  {
-    id: "cmp-2b",
-    complainantName: "Kabir Sharma",
-    relation: "Student",
-    contact: "9876509999",
-    studentId: "stu-3",
-    studentName: "Kabir Sharma",
-    className: "Class 8",
-    section: "A",
-    scholarNumber: "SCH2024033",
-    nature: "Behavioral",
-    natureOther: "",
-    description: "Reported bullying in the corridor during recess.",
-    mode: "Offline",
-    raisedBy: "Front Office",
-    recordedBy: "Front Desk",
-    status: "New",
-    resolutionNotes: "",
-    createdAt: daysAgo(1),
-  },
-  {
-    id: "cmp-3",
-    complainantName: "Aarav Patel",
-    relation: "",
-    contact: "9876501234",
-    studentId: "stu-1",
-    studentName: "Aarav Patel",
-    className: "Class 5",
-    section: "A",
-    scholarNumber: "SCH2024001",
-    nature: "Academic",
-    natureOther: "",
-    description: "Homework notebook not returned after correction.",
-    mode: "Online",
-    raisedBy: "Student",
-    recordedBy: "",
-    status: "New",
-    resolutionNotes: "",
-    createdAt: daysAgo(2),
-  },
-  {
-    id: "cmp-4",
-    complainantName: "Sunita Devi",
-    relation: "Mother",
-    contact: "9822233344",
-    studentId: "stu-1",
-    studentName: "Aarav Patel",
-    className: "Class 5",
-    section: "A",
-    scholarNumber: "SCH2024001",
-    nature: "Fee",
-    natureOther: "",
-    description: "Fee receipt for Term 1 not showing in parent portal.",
-    mode: "Online",
-    raisedBy: "Parent",
-    recordedBy: "",
-    status: "In Progress",
-    resolutionNotes: "Accounts checking portal sync.",
-    createdAt: daysAgo(3),
-  },
-];
+export const initialEnquiries = [];
+export const initialVisitors = [];
+export const initialComplaints = [];
 
 export function getNextPendingFollowUp(enquiry) {
   if (!enquiry?.followUps?.length) return null;
@@ -959,8 +647,9 @@ export function followUpSortKey(fu) {
 
 export function formatFollowUpWhen(fu) {
   if (!fu?.dateToCall) return "—";
+  const formattedDate = formatDateDMY(fu.dateToCall);
   const timeLabel = formatFollowUpTimeLabel(fu);
-  return timeLabel ? `${fu.dateToCall} · ${timeLabel}` : fu.dateToCall;
+  return timeLabel ? `${formattedDate} · ${timeLabel}` : formattedDate;
 }
 
 /** Human-readable call window only (no date). */
@@ -1016,4 +705,30 @@ export function getFollowUpUrgency(fu) {
 
 export function todayISO() {
   return iso(today);
+}
+
+export function smartSearchMatch(item, query, fieldKeys) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+
+  const values = fieldKeys
+    .map((k) => (typeof k === "function" ? k(item) : item[k]))
+    .filter((v) => v !== null && v !== undefined && v !== "")
+    .map((v) => String(v).toLowerCase());
+
+  if (values.length === 0) return false;
+
+  const queryTokens = q.split(/\s+/).filter(Boolean);
+  const allWords = values.flatMap((v) => v.split(/[\s,._\-@]+/)).filter(Boolean);
+  const fullHaystack = values.join(" ");
+
+  return queryTokens.every((token) => {
+    if (token.length <= 2) {
+      return (
+        allWords.some((w) => w.startsWith(token)) ||
+        values.some((v) => v.startsWith(token))
+      );
+    }
+    return fullHaystack.includes(token);
+  });
 }

@@ -137,13 +137,40 @@ export default function ComplaintFormPage() {
 
   const submit = (e) => {
     e.preventDefault();
+
+    let currentStudentId = form.studentId;
+    let currentStudent = null;
+
+    if (!currentStudentId && studentQuery.trim()) {
+      const q = studentQuery.trim().toLowerCase();
+      const match = students.find(
+        (s) =>
+          s.name.toLowerCase() === q ||
+          s.scholarNumber?.toLowerCase() === q
+      );
+      if (match) {
+        currentStudentId = match.id;
+        currentStudent = match;
+        setForm((prev) => ({
+          ...prev,
+          studentId: match.id,
+          studentName: match.name,
+          className: match.className,
+          section: match.section || "",
+          scholarNumber: match.scholarNumber,
+        }));
+      }
+    }
+
     const next = {};
     if (!form.complainantName.trim()) next.complainantName = "Required";
     if (!form.relation) next.relation = "Required";
     if (!/^\d{10}$/.test(String(form.contact || "").trim())) {
       next.contact = "Enter a valid 10-digit number";
     }
-    if (!form.studentId) next.student = "Select a student";
+    if (!currentStudentId) {
+      next.student = "Please select a student from the dropdown list";
+    }
     if (!form.description.trim()) next.description = "Required";
     else if (countWords(form.description) > MAX_DESC_WORDS) {
       next.description = `Max ${MAX_DESC_WORDS} words`;
@@ -154,10 +181,23 @@ export default function ComplaintFormPage() {
     setErrors(next);
     if (Object.keys(next).length) return;
 
+    const payload = {
+      ...form,
+      ...(currentStudent
+        ? {
+            studentId: currentStudent.id,
+            studentName: currentStudent.name,
+            className: currentStudent.className,
+            section: currentStudent.section || "",
+            scholarNumber: currentStudent.scholarNumber,
+          }
+        : {}),
+    };
+
     if (isEdit) {
       updateComplaint({
         ...editing,
-        ...form,
+        ...payload,
         id: editing.id,
         mode: editing.mode || "Offline",
         raisedBy: editing.raisedBy || "Front Office",
@@ -170,7 +210,7 @@ export default function ComplaintFormPage() {
     }
 
     const newId = addComplaint({
-      ...form,
+      ...payload,
       mode: "Offline",
       raisedBy: "Front Office",
       recordedBy: currentUser?.name || "",
@@ -185,40 +225,38 @@ export default function ComplaintFormPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-gray-500">
-          <Link
-            to="/front-office/complaints"
-            className="text-green-700 hover:underline"
-          >
-            Complaint Register
-          </Link>
-          <span className="mx-1.5 text-gray-300">/</span>
-          {isEdit ? "Edit" : "New"}
-        </p>
-        <h2 className="text-2xl font-bold text-gray-900">
-          {isEdit ? "Edit Complaint" : "Register Offline Complaint"}
-        </h2>
-        <p className="text-sm text-gray-500">
-          Walk-in desk entry — capture the complaint from the visitor and submit
-          it to the register.
-        </p>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate("/front-office/complaints")}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:border-gray-300 hover:text-green-700 transition-all cursor-pointer"
+          title="Back"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+            {isEdit ? "Edit Complaint" : "Register Offline Complaint"}
+          </h2>
+          <p className="text-xs text-gray-500">
+            Walk-in desk entry — capture the complaint from the visitor and submit
+            it to the register.
+          </p>
+        </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6 lg:p-7">
         <form className="space-y-5" onSubmit={submit}>
           <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
             Source:{" "}
-            <span className="font-medium">
+            <span className="font-medium text-gray-900">
               {complaintSourceLabel({
                 mode: "Offline",
                 relation: form.relation,
               })}
-            </span>
-            <span className="text-gray-500">
-              {" "}
-              · Front Office desk
-              {currentUser?.name ? ` · ${currentUser.name}` : ""}
             </span>
           </div>
 
@@ -252,11 +290,19 @@ export default function ComplaintFormPage() {
 
             <Field label="Mobile Number" required error={errors.contact}>
               <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 className={inputClass}
                 value={form.contact}
                 onChange={(e) =>
-                  set("contact", e.target.value.replace(/\D/g, "").slice(0, 10))
+                  set("contact", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))
                 }
+                onKeyDown={(e) => {
+                  if (e.key.length === 1 && !/[0-9]/.test(e.key) && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                  }
+                }}
                 placeholder="10-digit mobile"
               />
             </Field>

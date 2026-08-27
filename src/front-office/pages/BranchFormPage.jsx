@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { Building2, Camera, Upload } from "lucide-react";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import {
   Field,
@@ -8,6 +9,40 @@ import {
   inputClass,
   selectClass,
 } from "../components/ui";
+
+const COUNTRY_CODES = [
+  { code: "+91", label: "🇮🇳 +91", country: "India" },
+  { code: "+1",  label: "🇺🇸 +1",  country: "USA/Canada" },
+  { code: "+44", label: "🇬🇧 +44", country: "UK" },
+  { code: "+971",label: "🇦🇪 +971",country: "UAE" },
+  { code: "+61", label: "🇦🇺 +61", country: "Australia" },
+  { code: "+65", label: "🇸🇬 +65", country: "Singapore" },
+  { code: "+60", label: "🇲🇾 +60", country: "Malaysia" },
+  { code: "+92", label: "🇵🇰 +92", country: "Pakistan" },
+  { code: "+880",label: "🇧🇩 +880",country: "Bangladesh" },
+  { code: "+94", label: "🇱🇰 +94", country: "Sri Lanka" },
+  { code: "+977",label: "🇳🇵 +977",country: "Nepal" },
+  { code: "+49", label: "🇩🇪 +49", country: "Germany" },
+  { code: "+33", label: "🇫🇷 +33", country: "France" },
+  { code: "+81", label: "🇯🇵 +81", country: "Japan" },
+  { code: "+86", label: "🇨🇳 +86", country: "China" },
+];
+
+function splitPhone(raw) {
+  if (!raw) return { code: "+91", number: "" };
+  const sRaw = String(raw).trim();
+  const match = COUNTRY_CODES.find((c) => sRaw.startsWith(c.code));
+  if (match) {
+    return {
+      code: match.code,
+      number: sRaw.slice(match.code.length).replace(/\D/g, "").slice(0, 10),
+    };
+  }
+  return {
+    code: "+91",
+    number: sRaw.replace(/^\+?91/, "").replace(/\D/g, "").slice(0, 10),
+  };
+}
 
 const emptyForm = () => ({
   name: "",
@@ -44,6 +79,9 @@ export default function BranchFormPage() {
   const [form, setForm] = useState(() =>
     editing ? formFromBranch(editing) : emptyForm()
   );
+  const parsedPhone = splitPhone(editing?.phone || "");
+  const [countryCode, setCountryCode] = useState(parsedPhone.code);
+  const [phoneNumber, setPhoneNumber] = useState(parsedPhone.number);
   const [logoName, setLogoName] = useState("");
   const [error, setError] = useState("");
 
@@ -108,7 +146,7 @@ export default function BranchFormPage() {
       code: form.code.trim().toUpperCase(),
       principalName: form.principalName.trim(),
       email: form.email.trim(),
-      phone: form.phone.trim(),
+      phone: phoneNumber.trim() ? `${countryCode} ${phoneNumber.trim()}` : "",
       address: form.address.trim(),
       status: form.status,
       logo: form.logo || "",
@@ -144,11 +182,6 @@ export default function BranchFormPage() {
           <h2 className="text-2xl font-bold text-gray-900">
             {isEdit ? "Edit branch" : "Create branch"}
           </h2>
-          <p className="text-sm text-gray-500">
-            {isEdit
-              ? "Update campus details, contact info, and logo."
-              : "Add a campus or branch for this school."}
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -176,62 +209,59 @@ export default function BranchFormPage() {
         ) : null}
 
         <div className="space-y-6 p-5 sm:p-6 lg:p-7">
-          <section className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Logo</h3>
-              <p className="text-xs text-gray-500">
-                Shown on the branches list. PNG, JPG, WEBP or SVG · max 1.5 MB
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 sm:flex-row sm:items-center">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <section className="flex items-center gap-5">
+            <div className="relative group">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-white p-1 text-gray-400 transition group-hover:border-green-600 shadow-xs">
                 {form.logo ? (
                   <img
                     src={form.logo}
-                    alt="Branch logo preview"
-                    className="h-full w-full object-cover"
+                    alt="Branch logo"
+                    className="h-full w-full object-contain"
                   />
                 ) : (
-                  <span className="px-2 text-center text-xs text-gray-400">
-                    No logo
-                  </span>
+                  <Building2 className="h-8 w-8 text-gray-300 group-hover:text-green-600 transition" />
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-green-700 text-white shadow-md hover:bg-green-800 transition cursor-pointer"
+                title="Upload logo"
+              >
+                <Camera className="h-3.5 w-3.5" />
+              </button>
+            </div>
 
-              <div className="min-w-0 flex-1 space-y-2">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
-                  className="hidden"
-                  onChange={handleLogoFile}
-                />
-                <div className="flex flex-wrap items-center gap-2">
+            <div className="space-y-1">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={handleLogoFile}
+              />
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  className={btnSecondary}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Upload className="h-3.5 w-3.5 text-gray-500 mr-1.5 inline" />
+                  {form.logo ? "Change logo" : "Upload logo"}
+                </button>
+                {form.logo ? (
                   <button
                     type="button"
-                    className={btnSecondary}
-                    onClick={() => fileRef.current?.click()}
+                    className="text-xs font-semibold text-red-600 hover:text-red-700 hover:underline px-1.5 py-1 cursor-pointer"
+                    onClick={clearLogo}
                   >
-                    {form.logo ? "Change logo" : "Upload logo"}
+                    Remove
                   </button>
-                  {form.logo ? (
-                    <button
-                      type="button"
-                      className="rounded-md px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                      onClick={clearLogo}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-                <p className="truncate text-xs text-gray-500">
-                  {logoName ||
-                    (form.logo
-                      ? "Current logo on file"
-                      : "No file selected")}
-                </p>
+                ) : null}
               </div>
+              <p className="text-xs text-gray-500">
+                Recommended: PNG, JPG, or SVG up to 1.5 MB
+              </p>
             </div>
           </section>
 
@@ -240,9 +270,6 @@ export default function BranchFormPage() {
               <h3 className="text-sm font-semibold text-gray-900">
                 Branch details
               </h3>
-              <p className="text-xs text-gray-500">
-                Name, code, and operating status for this campus.
-              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -254,7 +281,7 @@ export default function BranchFormPage() {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, name: e.target.value }))
                   }
-                  placeholder="e.g. Delhi Public School - East Campus"
+                  placeholder="Enter branch name"
                 />
               </Field>
 
@@ -267,7 +294,7 @@ export default function BranchFormPage() {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, code: e.target.value }))
                   }
-                  placeholder="e.g. DPS-EAST"
+                  placeholder="e.g. BR-01"
                 />
               </Field>
 
@@ -289,9 +316,6 @@ export default function BranchFormPage() {
           <section className="space-y-4 border-t border-gray-100 pt-6">
             <div>
               <h3 className="text-sm font-semibold text-gray-900">Contact</h3>
-              <p className="text-xs text-gray-500">
-                Principal and campus contact details.
-              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -306,7 +330,7 @@ export default function BranchFormPage() {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, principalName: e.target.value }))
                   }
-                  placeholder="e.g. Mrs. Ritu Verma"
+                  placeholder="Enter in-charge name"
                 />
               </Field>
 
@@ -318,20 +342,73 @@ export default function BranchFormPage() {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, email: e.target.value }))
                   }
-                  placeholder="principal@school.edu"
+                  placeholder="name@example.com"
                 />
               </Field>
 
               <Field label="Phone">
-                <input
-                  type="text"
-                  className={inputClass}
-                  value={form.phone}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, phone: e.target.value }))
-                  }
-                  placeholder="+91 …"
-                />
+                <div style={{ display: "flex", border: "1px solid #d1d5db", borderRadius: "8px", overflow: "hidden", background: "#ffffff" }}>
+                  <div style={{ position: "relative", flexShrink: 0, borderRight: "1px solid #e5e7eb", background: "#ffffff" }}>
+                    <select
+                      value={countryCode}
+                      onChange={(e) => setCountryCode(e.target.value)}
+                      style={{
+                        width: "100px",
+                        border: "none",
+                        padding: "9px 24px 9px 10px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        background: "#ffffff",
+                        cursor: "pointer",
+                        outline: "none",
+                        appearance: "none",
+                        WebkitAppearance: "none",
+                      }}
+                    >
+                      {COUNTRY_CODES.map((c) => (
+                        <option key={c.code} value={c.code} title={c.country}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <svg
+                      style={{
+                        position: "absolute",
+                        right: "8px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        pointerEvents: "none",
+                        color: "#6b7280",
+                      }}
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </div>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) =>
+                      setPhoneNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    }
+                    placeholder="Phone number"
+                    style={{
+                      flex: 1,
+                      border: "none",
+                      padding: "9px 12px",
+                      fontSize: "14px",
+                      outline: "none",
+                      background: "#ffffff",
+                    }}
+                  />
+                </div>
               </Field>
 
               <Field label="Address" className="sm:col-span-2">
@@ -341,7 +418,7 @@ export default function BranchFormPage() {
                   onChange={(e) =>
                     setForm((p) => ({ ...p, address: e.target.value }))
                   }
-                  placeholder="Campus address"
+                  placeholder="Enter branch address"
                 />
               </Field>
             </div>

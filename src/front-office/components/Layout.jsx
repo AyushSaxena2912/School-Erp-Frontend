@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Calendar, ChevronDown } from "lucide-react";
+import { Calendar, ChevronDown, KeyRound, LogOut, User, ShieldCheck } from "lucide-react";
 import { formatFollowUpTimeLabel, getFollowUpUrgency, getNextPendingFollowUp } from "../data/seed";
 import { useFrontOffice } from "../context/FrontOfficeContext";
+import { authService } from "../../services/authService";
 import Sidebar from "./sidebar/Sidebar";
+import ChangePasswordModal from "./ChangePasswordModal";
 
 function useDueFollowUps(enquiries, currentUser) {
   return useMemo(() => {
@@ -28,7 +30,20 @@ export default function FrontOfficeLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [academicYear, setAcademicYear] = useState("2026 / 2027");
+  const userMenuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   const due = useDueFollowUps(enquiries, currentUser);
   const overdueCount = due.filter((e) => {
     const nextFu = getNextPendingFollowUp(e);
@@ -248,17 +263,87 @@ export default function FrontOfficeLayout() {
               ) : null}
             </div>
 
-            <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-700 text-xs font-semibold tracking-wide text-white"
-              title={`${currentUser.name} · ${currentUser.role}`}
-              aria-label={`${currentUser.name}, ${currentUser.role}`}
-            >
-              {(currentUser.name || "GG")
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((w) => w[0]?.toUpperCase())
-                .join("") || "GG"}
+            {/* User Profile Avatar Dropdown */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowUserMenu((v) => !v)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-700 text-xs font-semibold tracking-wide text-white transition-all hover:ring-2 hover:ring-green-600 hover:ring-offset-2 focus:outline-none cursor-pointer"
+                title={`${currentUser.name} · ${currentUser.role}`}
+                aria-label={`${currentUser.name}, ${currentUser.role}`}
+              >
+                {(currentUser.name || "A")
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((w) => w[0]?.toUpperCase())
+                  .join("") || "A"}
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-gray-200 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                  {/* User Details */}
+                  <div className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-sm font-bold text-white">
+                      {(currentUser.name || "A")
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((w) => w[0]?.toUpperCase())
+                        .join("") || "A"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-gray-900">
+                        {currentUser.name || "Administrator"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {currentUser.email || currentUser.role || "User"}
+                      </p>
+                      <span className="mt-0.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        {currentUser.role === "Parent" ? "Guardian" : (currentUser.role || "Staff")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-1.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setShowChangePasswordModal(true);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 cursor-pointer"
+                    >
+                      <KeyRound className="h-4 w-4 text-gray-500" />
+                      <span>Change Password</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setShowUserMenu(false);
+                        localStorage.removeItem("bodhya_user_name");
+                        localStorage.removeItem("bodhya_user_email");
+                        localStorage.removeItem("bodhya_user_role");
+                        localStorage.removeItem("bodhya_logged_in");
+                        localStorage.removeItem("frappe_sid");
+                        localStorage.removeItem("frappe_csrf_token");
+                        try {
+                          await authService.logout();
+                        } catch {
+                          // ignore
+                        }
+                        window.location.href = "/login";
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
+                    >
+                      <LogOut className="h-4 w-4 text-red-500" />
+                      <span>Logout</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -267,6 +352,14 @@ export default function FrontOfficeLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        open={showChangePasswordModal}
+        onClose={() => setShowChangePasswordModal(false)}
+        userEmail={currentUser.email}
+        userName={currentUser.name}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import {
@@ -9,13 +9,18 @@ import {
   complaintRelationLabel,
   parseComplaintSource,
   formatStudentLabel,
+  formatDateDMY,
   todayISO,
+  smartSearchMatch,
 } from "../data/seed";
 import {
   EmptyState,
   Field,
   SlideOver,
   StatusBadge,
+  ExportModal,
+  exportToPdf,
+  formatPhone,
   btnPrimary,
   btnSecondary,
   inputClass,
@@ -163,9 +168,14 @@ export default function ComplaintsPage() {
   const [filterNature, setFilterNature] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [search, setSearch] = useState("");
+  const [showExportModal, setShowExportModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [filterStatus, filterNature, filterSource, search]);
 
   const selected = complaints.find((c) => c.id === selectedId) || null;
 
@@ -183,24 +193,20 @@ export default function ComplaintsPage() {
   };
 
   const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return complaints.filter((c) => {
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterNature && c.nature !== filterNature) return false;
       if (filterSource && complaintSourceLabel(c) !== filterSource) return false;
-      if (q) {
-        const hay = [
-          c.complainantName,
-          c.contact,
-          c.studentName,
-          c.scholarNumber,
-          c.description,
-          complaintSourceLabel(c),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (search.trim()) {
+        const isMatch = smartSearchMatch(c, search, [
+          "complainantName",
+          "contact",
+          "studentName",
+          "scholarNumber",
+          "description",
+          (item) => complaintSourceLabel(item),
+        ]);
+        if (!isMatch) return false;
       }
       return true;
     });
@@ -235,9 +241,31 @@ export default function ComplaintsPage() {
   ];
 
   const handleExportComplaints = () => {
+    setShowExportModal(true);
+  };
+
+  const getExportRecords = () => {
+    if (selectedIds.length > 0) {
+      return complaints.filter((c) => selectedIds.includes(c.id));
+    }
+    return list;
+  };
+
+  const handleExportCsv = () => {
+    const dataToExport = getExportRecords();
     downloadCsv(
       `complaints-${todayISO()}.csv`,
-      toCsv(list, complaintCsvColumns)
+      toCsv(dataToExport, complaintCsvColumns)
+    );
+  };
+
+  const handleExportPdf = () => {
+    const dataToExport = getExportRecords();
+    exportToPdf(
+      "Complaints Register Report",
+      "School Front Office Management System",
+      complaintCsvColumns,
+      dataToExport
     );
   };
 
@@ -496,6 +524,7 @@ export default function ComplaintsPage() {
                       </td>
                       <td className="px-3 py-3 font-medium text-gray-900">
                         {c.complainantName}
+                        {c.contact ? <span className="block text-xs font-normal text-gray-500">{formatPhone(c.contact)}</span> : null}
                       </td>
                       <td className="px-3 py-3">{relation || "—"}</td>
                       <td className="px-3 py-3">
@@ -524,7 +553,7 @@ export default function ComplaintsPage() {
                       <td className="px-3 py-3">
                         <StatusBadge status={complaintSourceLabel(c)} />
                       </td>
-                      <td className="px-3 py-3">{c.createdAt}</td>
+                      <td className="px-3 py-3">{formatDateDMY(c.createdAt)}</td>
                       <td className="px-3 py-3">
                         <StatusBadge status={c.status} />
                       </td>
@@ -574,6 +603,15 @@ export default function ComplaintsPage() {
         confirmLabel="Delete"
         onClose={() => setConfirmDeleteId(null)}
         onConfirm={handleSingleDelete}
+      />
+
+      <ExportModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        totalCount={list.length}
+        selectedCount={selectedIds.length}
+        onExportCsv={handleExportCsv}
+        onExportPdf={handleExportPdf}
       />
     </div>
   );

@@ -311,6 +311,26 @@ export function roleAllowed(roles, role) {
 export const SHOW_ALL_NAV = true;
 
 export function filterGroupsForRole(groups, role) {
+  if (role === "student") {
+    return groups
+      .filter((g) => roleAllowed(g.roles, role))
+      .map((g) => ({
+        ...g,
+        items: g.items
+          .filter((item) => roleAllowed(item.roles, role))
+          .map((item) => {
+            if (!item.children) return item;
+            const children = item.children.filter((c) =>
+              roleAllowed(c.roles, role)
+            );
+            if (children.length === 0 && !item.to) return null;
+            return { ...item, children };
+          })
+          .filter(Boolean),
+      }))
+      .filter((g) => g.items.length > 0);
+  }
+
   if (SHOW_ALL_NAV) return groups;
 
   return groups

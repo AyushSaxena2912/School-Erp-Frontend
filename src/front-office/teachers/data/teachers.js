@@ -556,3 +556,4 @@ export const TEACHER_EXPERIENCES = [
   "15+ Years",
 ];
 
+export default initialTeachersData;

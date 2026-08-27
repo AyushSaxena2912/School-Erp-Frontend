@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { fetchMasters } from "../../api/masters";
 import { me as fetchMe } from "../../api/auth";
+import { frontOfficeService } from "../../services/frontOfficeService";
 import {
   CURRENT_USER,
   initialClasses,
@@ -33,27 +34,33 @@ function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+const PIPELINE_STATUSES = [
+  "Admission Approved",
+  "Form Sent",
+  "Form Submitted",
+  "Corrections Requested",
+  "Corrections Submitted",
+  "Verified",
+  "Accounts Created",
+  "Lost",
+];
+
+export function resolveLeadType(status, currentLeadType) {
+  const current = currentLeadType || "Warm Lead";
+  if (PIPELINE_STATUSES.includes(status) && current === "Hot Lead") {
+    return "Closed Lead";
+  }
+  return current;
+}
+
 function applyFollowUpStatus(enquiry, followUp) {
   let status = enquiry.status;
-  let leadType = enquiry.leadType;
   if (followUp.outcome === "Admitted") {
-    status = "Admitted";
-    leadType = "Closed";
+    status = "Accounts Created";
   } else if (followUp.outcome === "Not Interested") {
     status = "Lost";
-    leadType = "Closed";
-  } else if (followUp.outcome === "Interested") {
-    status = enquiry.converted ? enquiry.status : "Follow-up Pending";
-    leadType = enquiry.converted ? "Closed" : "Hot Lead";
-  } else if (
-    followUp.outcome === "Needs Another Follow-up" ||
-    followUp.outcome === "Call Not Picked" ||
-    followUp.outcome === "Not Called Yet"
-  ) {
-    status = enquiry.converted ? enquiry.status : "Follow-up Pending";
-    if (enquiry.converted) leadType = "Closed";
   }
-  return { status, leadType };
+  return { status, leadType: resolveLeadType(status, enquiry.leadType) };
 }
 
 function mergeByName(erpList, demoList) {
@@ -65,13 +72,16 @@ function mergeByName(erpList, demoList) {
   return [...erp, ...demo];
 }
 
-/** Keep ERP records and append seed data so Settings / forms have demo options. */
+/** Keep ERP records without demo staff. */
 function mergeStaffWithDemo(erpStaff) {
-  return mergeByName(erpStaff, initialStaff);
+  return (erpStaff || []).map((item) => ({ ...item, source: "erp" }));
 }
 
 function mergeClassesWithDemo(erpClasses) {
-  return mergeByName(erpClasses, initialClasses);
+  if (erpClasses && erpClasses.length > 0) {
+    return erpClasses.map((item) => ({ ...item, source: "erp" }));
+  }
+  return initialClasses;
 }
 
 function reducer(state, action) {
@@ -138,6 +148,24 @@ function reducer(state, action) {
     case "SET_CURRENT_USER": {
       return { ...state, currentUser: action.payload };
     }
+    case "SET_ENQUIRIES": {
+      return {
+        ...state,
+        enquiries: (action.payload || []).map(normalizeEnquiryNames),
+      };
+    }
+    case "SET_VISITORS": {
+      return {
+        ...state,
+        visitors: action.payload,
+      };
+    }
+    case "SET_COMPLAINTS": {
+      return {
+        ...state,
+        complaints: action.payload,
+      };
+    }
     case "ADD_ENQUIRY": {
       const enquiry = {
         ...action.payload,
@@ -159,11 +187,12 @@ function reducer(state, action) {
       };
     }
     case "UPDATE_ENQUIRY": {
+      const { id, id_new } = action.payload;
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === action.payload.id
-            ? normalizeEnquiryNames({ ...e, ...action.payload })
+          e.id === id || (id_new && e.id === id_new) || (e.name && (e.name === id || e.name === id_new))
+            ? normalizeEnquiryNames({ ...e, ...action.payload, id: id_new || action.payload.id || e.id })
             : e
         ),
       };
@@ -231,12 +260,14 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) =>
           e.id === action.payload
             ? {
-                ...e,
-                status: "Admission Approved",
-                leadType: "Closed",
-                converted: false,
-                approvedAt: todayISO(),
-              }
+              ...e,
+              status: "Admission Approved",
+              leadType: resolveLeadType("Admission Approved", e.leadType),
+              converted: false,
+              approvedAt: todayISO(),
+              admissionToken: action.security_token || e.admissionToken,
+              security_token: action.security_token || e.security_token,
+            }
             : e
         ),
       };
@@ -248,34 +279,44 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) =>
           e.id === id
             ? {
-                ...e,
-                status: "Form Sent",
-                admissionToken: token,
-                formSentAt: todayISO(),
-                correctionNotes: "",
-              }
+              ...e,
+              status: "Form Sent",
+              leadType: resolveLeadType("Form Sent", e.leadType),
+              admissionToken: token,
+              formSentAt: todayISO(),
+              correctionNotes: "",
+            }
             : e
         ),
       };
     }
     case "SUBMIT_PARENT_ADMISSION_FORM": {
-      const { token, form } = action.payload;
+      const { token, form, isFaculty } = action.payload;
+      const qToken = (token || "").toLowerCase();
       return {
         ...state,
         enquiries: state.enquiries.map((e) => {
-          if (e.admissionToken !== token) return e;
-          const wasCorrection = e.status === "Corrections Requested";
+          const matchToken = e.admissionToken && e.admissionToken.toLowerCase() === qToken;
+          const matchSecurity = e.security_token && e.security_token.toLowerCase() === qToken;
+          const matchId = e.id && (qToken.includes(e.id.toLowerCase().replace(/[^a-z0-9]/g, "")) || e.id.toLowerCase() === qToken);
+          if (!matchToken && !matchSecurity && !matchId) return e;
+          const nextStatus = isFaculty
+            ? e.status
+            : (e.status === "Corrections Requested" ? "Corrections Submitted" : "Form Submitted");
           return {
             ...e,
-            status: wasCorrection ? "Corrections Submitted" : "Form Submitted",
-            admissionForm: form,
-            formSubmittedAt: todayISO(),
-            correctionNotes: "",
-            ...(wasCorrection
+            status: nextStatus,
+            section: form.section || e.section || "",
+            house: form.house || e.house || "",
+            admissionForm: { ...(e.admissionForm || {}), ...form },
+            customValues: form.customValues || e.customValues || {},
+            formSubmittedAt: e.formSubmittedAt || todayISO(),
+            ...(e.status === "Corrections Requested" && !isFaculty
               ? {
-                  correctionsSubmittedAt: todayISO(),
-                  lastCorrectionNotes: e.correctionNotes || "",
-                }
+                correctionsSubmittedAt: todayISO(),
+                lastCorrectionNotes: e.correctionNotes || "",
+                correctionNotes: "",
+              }
               : {}),
           };
         }),
@@ -288,19 +329,13 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) =>
           e.id === id
             ? {
-                ...e,
-                status: "Corrections Requested",
-                correctionNotes: notes || "",
-                correctionsSubmittedAt: "",
-              }
+              ...e,
+              status: "Corrections Requested",
+              correctionNotes: notes || "",
+              correctionsSubmittedAt: "",
+            }
             : e
         ),
-      };
-    }
-    case "SET_ENQUIRIES": {
-      return {
-        ...state,
-        enquiries: (action.payload || []).map(normalizeEnquiryNames),
       };
     }
     case "VERIFY_ADMISSION": {
@@ -309,11 +344,11 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) =>
           e.id === action.payload
             ? {
-                ...e,
-                status: "Verified",
-                verifiedAt: todayISO(),
-                correctionNotes: "",
-              }
+              ...e,
+              status: "Verified",
+              verifiedAt: todayISO(),
+              correctionNotes: "",
+            }
             : e
         ),
       };
@@ -326,15 +361,15 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) =>
           e.id === id
             ? {
-                ...e,
-                status: "Accounts Created",
-                converted: true,
-                leadType: "Closed",
-                admissionNumber,
-                studentPassword,
-                parentActivationToken,
-                accountsCreatedAt: todayISO(),
-              }
+              ...e,
+              status: "Accounts Created",
+              converted: true,
+              leadType: "Closed",
+              admissionNumber,
+              studentPassword,
+              parentActivationToken,
+              accountsCreatedAt: todayISO(),
+            }
             : e
         ),
       };
@@ -348,10 +383,11 @@ function reducer(state, action) {
       return { ...state, visitors: [visitor, ...state.visitors] };
     }
     case "UPDATE_VISITOR": {
+      const { id, id_new, ...rest } = action.payload;
       return {
         ...state,
         visitors: state.visitors.map((v) =>
-          v.id === action.payload.id ? { ...v, ...action.payload } : v
+          v.id === id ? { ...v, ...rest, id: id_new || v.id } : v
         ),
       };
     }
@@ -393,10 +429,11 @@ function reducer(state, action) {
       return { ...state, complaints: [complaint, ...state.complaints] };
     }
     case "UPDATE_COMPLAINT": {
+      const { id, id_new, ...rest } = action.payload;
       return {
         ...state,
         complaints: state.complaints.map((c) =>
-          c.id === action.payload.id ? { ...c, ...action.payload } : c
+          c.id === id ? { ...c, ...rest, id: id_new || c.id } : c
         ),
       };
     }
@@ -573,9 +610,9 @@ function readFromStorage(key, defaultVal) {
 function isStoredImageLogo(logo) {
   return Boolean(
     logo &&
-      (String(logo).startsWith("data:") ||
-        String(logo).startsWith("http") ||
-        String(logo).startsWith("/"))
+    (String(logo).startsWith("data:") ||
+      String(logo).startsWith("http") ||
+      String(logo).startsWith("/"))
   );
 }
 
@@ -588,26 +625,57 @@ function readSchoolProfile() {
   };
 }
 
+function readCustomFields() {
+  const stored = readFromStorage("bodhya_custom_fields", null);
+  let fields = initialCustomFields;
+  if (Array.isArray(stored)) {
+    const cleanStored = stored.filter(
+      (f) => f.label !== "Test Field 1" && f.label !== "Test Field 2"
+    );
+    const seen = new Set(cleanStored.map((f) => (f.label || "").toLowerCase()));
+    const missing = initialCustomFields.filter(
+      (f) => !seen.has((f.label || "").toLowerCase())
+    );
+    fields = [...cleanStored, ...missing];
+  }
+  return fields.filter((f) => f.label !== "Test Field 1" && f.label !== "Test Field 2");
+}
+
+const getInitialCurrentUser = () => {
+  try {
+    const localName = localStorage.getItem("bodhya_user_name");
+    const localEmail = localStorage.getItem("bodhya_user_email");
+    const localRole = localStorage.getItem("bodhya_user_role");
+    if (localName || localEmail) {
+      return {
+        id: localEmail || "user",
+        name: localName || "User",
+        role: localRole === "Parent" ? "Guardian" : (localRole || "Staff"),
+        email: localEmail || "",
+      };
+    }
+  } catch {}
+  return CURRENT_USER;
+};
+
 const initialState = {
-  currentUser: CURRENT_USER,
-  staff: initialStaff.map((s) => ({ ...s, source: "demo" })),
-  // Users who can appear in Assigned To dropdowns
-  assignableStaffIds: ["staff-1", "staff-2", "staff-3"],
+  currentUser: getInitialCurrentUser(),
+  staff: [],
+  assignableStaffIds: [],
   classes: initialClasses.map((c) => ({ ...c, source: "demo" })),
   feeStructures: [], // loaded from ERP Fee Structure only
-  customFields: initialCustomFields,
-  systemFields: initialSystemFields,
-  students: initialStudents,
-  visitors: initialVisitors,
-  complaints: initialComplaints,
+  customFields: readCustomFields(),
+  systemFields: readFromStorage("bodhya_system_fields", initialSystemFields).filter(
+    (f) => f.id !== "sys-assignedTo" && f.key !== "assignedTo"
+  ),
+  students: [],
+  visitors: [],
+  complaints: [],
   mastersSource: "demo", // "backend" | "demo"
   schoolProfile: readSchoolProfile(),
   branches: readFromStorage("bodhya_branches", defaultBranches),
-  // NEVER persist enquiries — refresh always restores seed.
-  enquiries: initialEnquiries.map(normalizeEnquiryNames),
+  enquiries: [],
 };
-
-const VISITORS_SEED_VERSION = "v4-meet-student-no-whom";
 
 export function FrontOfficeProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -619,6 +687,7 @@ export function FrontOfficeProvider({ children }) {
       localStorage.removeItem("bodhya_enquiries");
       localStorage.removeItem("bodhya_enquiries_seed_version");
       sessionStorage.removeItem("fo_enquiries_seed_version");
+      sessionStorage.removeItem("fo_visitors_seed_version");
     } catch {
       /* ignore */
     }
@@ -633,12 +702,12 @@ export function FrontOfficeProvider({ children }) {
   }, [state.branches]);
 
   useEffect(() => {
-    const key = "fo_visitors_seed_version";
-    if (sessionStorage.getItem(key) !== VISITORS_SEED_VERSION) {
-      dispatch({ type: "RESET_VISITORS", payload: initialVisitors });
-      sessionStorage.setItem(key, VISITORS_SEED_VERSION);
-    }
-  }, []);
+    localStorage.setItem("bodhya_custom_fields", JSON.stringify(state.customFields));
+  }, [state.customFields]);
+
+  useEffect(() => {
+    localStorage.setItem("bodhya_system_fields", JSON.stringify(state.systemFields));
+  }, [state.systemFields]);
 
   const refreshMasters = useCallback(async () => {
     setMastersLoading(true);
@@ -659,7 +728,7 @@ export function FrontOfficeProvider({ children }) {
     } catch (err) {
       setMastersError(
         err.message ||
-          "Could not load masters from backend. Using demo data."
+        "Could not load masters from backend. Using demo data."
       );
       dispatch({
         type: "SET_MASTERS",
@@ -675,28 +744,292 @@ export function FrontOfficeProvider({ children }) {
     (async () => {
       try {
         const user = await fetchMe();
-        if (user?.is_authenticated) {
+        if (user?.is_authenticated && user.user !== "Guest") {
           dispatch({
             type: "SET_CURRENT_USER",
             payload: {
               id: user.user,
               name: user.full_name || user.user,
-              role: (user.roles || []).find(
-                (r) => !["All", "Guest", "Desk User"].includes(r)
-              ) || "Staff",
-              email: user.email,
+              role: (() => {
+                const found = (user.roles || []).find(
+                  (r) => !["All", "Guest", "Desk User"].includes(r)
+                ) || "Staff";
+                return found === "Parent" ? "Guardian" : found;
+              })(),
+              email: user.email || user.user,
+            },
+          });
+        } else {
+          const storedName = localStorage.getItem("bodhya_user_name");
+          const storedEmail = localStorage.getItem("bodhya_user_email");
+          const storedRole = localStorage.getItem("bodhya_user_role");
+          if (storedName || storedEmail) {
+            dispatch({
+              type: "SET_CURRENT_USER",
+              payload: {
+                id: storedEmail || "user",
+                name: storedName || "User",
+                role: storedRole || "Student",
+                email: storedEmail || "",
+              },
+            });
+          }
+        }
+      } catch {
+        const storedName = localStorage.getItem("bodhya_user_name");
+        const storedEmail = localStorage.getItem("bodhya_user_email");
+        const storedRole = localStorage.getItem("bodhya_user_role");
+        if (storedName || storedEmail) {
+          dispatch({
+            type: "SET_CURRENT_USER",
+            payload: {
+              id: storedEmail || "user",
+              name: storedName || "User",
+              role: storedRole || "Student",
+              email: storedEmail || "",
             },
           });
         }
-      } catch {
-        // keep demo current user
+      }
+
+      try {
+        const enqRes = await frontOfficeService.getEnquiries();
+        const rawEnq = Array.isArray(enqRes)
+          ? enqRes
+          : (Array.isArray(enqRes?.data?.enquiries) ? enqRes.data.enquiries : (Array.isArray(enqRes?.data) ? enqRes.data : (Array.isArray(enqRes?.message?.data?.enquiries) ? enqRes.message.data.enquiries : (Array.isArray(enqRes?.message?.data) ? enqRes.message.data : (Array.isArray(enqRes?.message) ? enqRes.message : [])))));
+
+        if (Array.isArray(rawEnq)) {
+          const list = rawEnq.map((item) => {
+            const studentFirstName = item.student_first_name || item.student_name?.split(" ")[0] || "";
+            const studentLastName = item.student_last_name || item.student_name?.split(" ").slice(1).join(" ") || "";
+            const studentName = `${studentFirstName} ${studentLastName}`.trim() || item.student_name || "Student";
+
+            const guardianFirstName = item.guardian_first_name || item.parent_name?.split(" ")[0] || "";
+            const guardianLastName = item.guardian_last_name || item.parent_name?.split(" ").slice(1).join(" ") || "";
+            const guardianName = `${guardianFirstName} ${guardianLastName}`.trim() || item.parent_name || "Parent";
+            const mobile = item.guardian_mobile || item.parent_mobile || item.contact || "";
+            const className = item.class_applying_for || "Class 10";
+
+            const parsedCF = (() => {
+              if (typeof item.custom_fields === "string") {
+                try { return JSON.parse(item.custom_fields); } catch { return null; }
+              }
+              return item.custom_fields || null;
+            })();
+
+            const admissionFormObj = (parsedCF && (parsedCF.firstName || parsedCF.academicYear || parsedCF.section || parsedCF.house || parsedCF.father || parsedCF.mother || parsedCF.currentAddress || parsedCF.religion || parsedCF.category || parsedCF.customValues))
+              ? parsedCF
+              : (item.admissionForm || null);
+
+            const customValuesObj = (parsedCF && parsedCF.customValues)
+              ? parsedCF.customValues
+              : (parsedCF && typeof parsedCF === "object" && !parsedCF.firstName ? parsedCF : (item.customValues && typeof item.customValues === "object" ? item.customValues : {}));
+
+            return {
+              id: item.name || item.id,
+              name: item.name || item.id,
+              studentFirstName,
+              studentLastName,
+              studentName,
+              className,
+              classId: item.class_applying_for || item.classId || "class-1",
+              academicYear: item.academic_year || "2026-27",
+              guardianFirstName,
+              guardianLastName,
+              guardianName,
+              guardianRelation: item.guardian_relation || "Father",
+              contact: mobile,
+              parentMobile: mobile,
+              parentEmail: item.guardian_email || item.parent_email || "",
+              studentMobile: item.student_mobile || "",
+              gender: item.gender || item.student_gender || "",
+              studentGender: item.gender || item.student_gender || "",
+              section: parsedCF?.section || item.section || "",
+              house: parsedCF?.house || item.house || "",
+              correctionNotes: item.enquiry_details || item.correctionNotes || "",
+              leadType: resolveLeadType(item.status, item.lead_temperature || item.lead_type || item.leadType),
+              status: item.status || "Inquiry",
+              admissionToken: item.security_token || item.admissionToken || item.admission_token || "",
+              admissionForm: admissionFormObj,
+              createdAt: item.creation?.split(" ")[0] || todayISO(),
+              followUps: item.follow_ups || [],
+              customValues: customValuesObj,
+            };
+          });
+          dispatch({ type: "SET_ENQUIRIES", payload: list });
+        }
+      } catch (err) {
+        console.warn("Could not sync backend enquiries to React state:", err);
+      }
+
+      try {
+        const visRes = await frontOfficeService.getVisitors();
+        const rawVis = Array.isArray(visRes?.data?.visitors)
+          ? visRes.data.visitors
+          : (visRes?.data || visRes?.message?.data || (Array.isArray(visRes?.message) ? visRes.message : (Array.isArray(visRes) ? visRes : [])));
+        if (Array.isArray(rawVis)) {
+          const list = rawVis.map((item) => ({
+            id: item.name,
+            visitorName: item.visitor_name,
+            name: item.visitor_name,
+            contact: item.contact_number || "",
+            purpose: item.purpose_of_visit || "General Inquiry",
+            relation: item.relation_to_student || "",
+            whomToMeet: item.whom_to_meet || "",
+            studentName: item.student || "",
+            remarks: item.remarks || "",
+            checkIn: item.check_in_time || todayISO(),
+            checkInTime: item.check_in_time || todayISO(),
+            checkOut: item.check_out_time || null,
+            checkOutTime: item.check_out_time || null,
+          }));
+          dispatch({ type: "SET_VISITORS", payload: list });
+        }
+      } catch (err) {
+        console.warn("Could not sync backend visitors:", err);
+      }
+
+      try {
+        const cmpRes = await frontOfficeService.getComplaints();
+        const rawCmp = Array.isArray(cmpRes)
+          ? cmpRes
+          : (Array.isArray(cmpRes?.data?.complaints) ? cmpRes.data.complaints : (Array.isArray(cmpRes?.data) ? cmpRes.data : (Array.isArray(cmpRes?.message?.data?.complaints) ? cmpRes.message.data.complaints : (Array.isArray(cmpRes?.message?.data) ? cmpRes.message.data : (Array.isArray(cmpRes?.message) ? cmpRes.message : [])))));
+        if (Array.isArray(rawCmp)) {
+          const list = rawCmp.map((item) => ({
+            id: item.name,
+            complainantName: item.complainant_name,
+            complainant: item.complainant_name,
+            relation: item.relation_to_student || "Mother",
+            contact: item.mobile_number || "",
+            mobile: item.mobile_number || "",
+            nature: item.nature_of_complaint || "Others",
+            source: item.source || "Offline · Parent / Guardian",
+            description: item.brief_discussion || "",
+            briefDiscussion: item.brief_discussion || "",
+            resolutionNotes: item.resolution_notes || "",
+            recordedBy: item.recorded_by || "",
+            status: item.status || "New",
+            createdAt: typeof item.creation === "string" ? item.creation.split(" ")[0] : todayISO(),
+          }));
+          dispatch({ type: "SET_COMPLAINTS", payload: list });
+        }
+      } catch (err) {
+        console.warn("Could not sync backend complaints:", err);
+      }
+
+      try {
+        const cfRes = await frontOfficeService.getCustomFields();
+        const rawCF = cfRes?.fields || cfRes?.data || cfRes?.message?.fields || cfRes?.message;
+        if (Array.isArray(rawCF)) {
+          const cleanCF = rawCF.filter(f => f.label !== "Test Field 1" && f.label !== "Test Field 2");
+          dispatch({ type: "REORDER_CUSTOM_FIELDS", payload: cleanCF.length ? cleanCF : initialCustomFields });
+          if (cleanCF.length !== rawCF.length) {
+            frontOfficeService.saveCustomFields(cleanCF.length ? cleanCF : initialCustomFields).catch(() => { });
+          }
+        }
+      } catch (err) {
+        console.warn("Could not sync custom fields from backend:", err);
       }
     })();
   }, [refreshMasters]);
 
+  const allStudents = useMemo(() => {
+    const enquiryStudents = (state.enquiries || []).map((e) => {
+      const f = e.admissionForm || {};
+      const rawCF = e.customValues || (typeof e.custom_fields === "object" ? e.custom_fields : {}) || (typeof e.custom_fields === "string" ? (() => { try { return JSON.parse(e.custom_fields); } catch { return {}; } })() : {});
+      const cf = typeof rawCF === "object" && rawCF !== null ? rawCF : {};
+
+      const gRel = f.guardian?.relation || cf.guardian?.relation || cf.guardianRelation || e.guardianRelation || f.guardianIs || "Father";
+      const gFullName = f.guardian?.name || cf.guardian?.name || e.guardianName || (e.guardianFirstName ? `${e.guardianFirstName} ${e.guardianLastName || ""}`.trim() : "") || e.parentName || "";
+      const gMobile = f.guardian?.phone || cf.guardian?.phone || e.parentMobile || e.guardianMobile || e.contact || "";
+      const gEmail = f.guardian?.email || cf.guardian?.email || e.parentEmail || e.guardianEmail || "";
+
+      const fName = f.father?.name || cf.father?.name || cf.fatherName || (gRel === "Father" ? gFullName : "") || e.fatherName || "";
+      const fPhone = f.father?.phone || cf.father?.phone || cf.fatherMobile || (gRel === "Father" ? gMobile : "") || e.fatherMobile || "";
+      const fEmail = f.father?.email || cf.father?.email || cf.fatherEmail || (gRel === "Father" ? gEmail : "") || e.fatherEmail || "";
+      const fOcc = f.father?.occupation || cf.father?.occupation || cf.fatherOccupation || "";
+
+      const mName = f.mother?.name || cf.mother?.name || cf.motherName || (gRel === "Mother" ? gFullName : "") || e.motherName || "";
+      const mPhone = f.mother?.phone || cf.mother?.phone || cf.motherMobile || (gRel === "Mother" ? gMobile : "") || e.motherMobile || "";
+      const mEmail = f.mother?.email || cf.mother?.email || cf.motherEmail || (gRel === "Mother" ? gEmail : "") || e.motherEmail || "";
+      const mOcc = f.mother?.occupation || cf.mother?.occupation || cf.motherOccupation || "";
+
+      const currentAddress = f.currentAddress || f.address || cf.currentAddress || cf.address || e.currentAddress || e.address || "";
+      const permanentAddress = f.permanentAddress || cf.permanentAddress || currentAddress || "";
+      const religion = f.religion || cf.religion || e.religion || "";
+      const category = f.category || f.socialCategory || cf.category || cf.socialCategory || e.category || e.socialCategory || "";
+      const motherTongue = f.motherTongue || cf.motherTongue || e.motherTongue || "";
+      const languages = (f.languages && f.languages.length) ? f.languages : (cf.languages && cf.languages.length ? cf.languages : (e.languages || []));
+
+      const customValues = {
+        ...(typeof cf === "object" ? cf : {}),
+        ...(e.customValues || {}),
+        ...(f.customValues || {}),
+      };
+
+      return {
+        id: e.id || e.name,
+        name: e.studentName || `${e.studentFirstName || ""} ${e.studentLastName || ""}`.trim() || "Student",
+        studentFirstName: e.studentFirstName || "",
+        studentLastName: e.studentLastName || "",
+        admissionNumber: e.admissionNumber || e.id || e.name,
+        scholarNumber: e.admissionNumber || e.id || e.name,
+        className: e.className || e.classId || "Class 10",
+        section: e.section || f.section || cf.section || "",
+        gender: e.gender || f.gender || cf.gender || "",
+        studentMobile: e.studentMobile || cf.studentMobile || "",
+        parentMobile: gMobile,
+        parentEmail: gEmail,
+        guardianName: gFullName,
+        guardianRelation: gRel,
+        guardianIs: f.guardianIs || cf.guardianIs || (gRel === "Mother" ? "Mother" : gRel === "Father" ? "Father" : "Other"),
+        father: {
+          photo: f.father?.photo || cf.father?.photo || "",
+          name: fName,
+          phone: fPhone,
+          email: fEmail,
+          occupation: fOcc,
+        },
+        mother: {
+          photo: f.mother?.photo || cf.mother?.photo || "",
+          name: mName,
+          phone: mPhone,
+          email: mEmail,
+          occupation: mOcc,
+        },
+        guardian: {
+          photo: f.guardian?.photo || cf.guardian?.photo || "",
+          name: gFullName || fName || mName,
+          relation: gRel,
+          phone: gMobile,
+          email: gEmail,
+          occupation: f.guardian?.occupation || cf.guardian?.occupation || "",
+        },
+        currentAddress,
+        permanentAddress,
+        religion,
+        category,
+        motherTongue,
+        languages,
+        customValues,
+        admissionForm: f,
+      };
+    });
+
+    const base = state.students || [];
+    const combined = [...base, ...enquiryStudents];
+    const seen = new Set();
+    return combined.filter((s) => {
+      if (!s || !s.name || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [state.students, state.enquiries]);
+
   const api = useMemo(
     () => ({
       ...state,
+      students: allStudents,
       assignableStaff: state.staff.filter(
         (s) =>
           state.assignableStaffIds.includes(s.id) && s.active !== false
@@ -708,44 +1041,156 @@ export function FrontOfficeProvider({ children }) {
         const id =
           payload.id ||
           `enq-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        // Live Backend REST API call to MariaDB!
+        frontOfficeService.createEnquiry({
+          student_first_name: payload.studentFirstName || payload.studentName?.split(" ")[0] || "Student",
+          student_middle_name: payload.studentMiddleName || "",
+          student_last_name: payload.studentLastName || payload.studentName?.split(" ").slice(1).join(" ") || "Applicant",
+          class_applying_for: payload.className || payload.classId || "Class 1",
+          academic_year: payload.academicYear || "2026-27",
+          guardian_relation: payload.guardianRelation || "Father",
+          guardian_first_name: payload.guardianFirstName || payload.parentName?.split(" ")[0] || "Guardian",
+          guardian_middle_name: payload.guardianMiddleName || "",
+          guardian_last_name: payload.guardianLastName || payload.parentName?.split(" ").slice(1).join(" ") || "Parent",
+          guardian_mobile: payload.parentMobile ? (payload.parentMobile.startsWith("+") ? payload.parentMobile : `+91${payload.parentMobile}`) : "+919876543210",
+          guardian_email: payload.parentEmail || "parent@email.com",
+          gender: payload.gender || "",
+          student_gender: payload.gender || "",
+          lead_temperature: payload.leadType || "Warm Lead",
+          status: payload.status || "Inquiry",
+          custom_fields: payload.customValues || payload.customFields || {},
+        }).then((res) => {
+          console.log("[FrontOffice REST API] Live Enquiry created in MariaDB:", res);
+          const savedData = res?.data || res?.message?.data || res?.message || res;
+          if (savedData?.name && savedData.name !== id) {
+            dispatch({ type: "UPDATE_ENQUIRY", payload: { id, id_new: savedData.name, name: savedData.name } });
+          }
+        }).catch((err) => {
+          console.warn("[FrontOffice REST API Error] Could not save enquiry:", err.message);
+        });
+
         dispatch({ type: "ADD_ENQUIRY", payload: { ...payload, id } });
         return id;
       },
-      updateEnquiry: (payload) => dispatch({ type: "UPDATE_ENQUIRY", payload }),
-      deleteEnquiries: (ids) =>
-        dispatch({ type: "DELETE_ENQUIRIES", payload: ids }),
-      addFollowUp: (enquiryId, followUp) =>
-        dispatch({ type: "ADD_FOLLOW_UP", payload: { enquiryId, followUp } }),
+      updateEnquiry: (payload) => {
+        frontOfficeService.updateEnquiry({
+          id: payload.id,
+          enquiry_id: payload.id,
+          student_first_name: payload.studentFirstName,
+          student_middle_name: payload.studentMiddleName,
+          student_last_name: payload.studentLastName,
+          gender: payload.gender || "",
+          student_gender: payload.gender || "",
+          class_applying_for: payload.className || payload.classId,
+          academic_year: payload.academicYear,
+          guardian_relation: payload.guardianRelation,
+          guardian_first_name: payload.guardianFirstName,
+          guardian_middle_name: payload.guardianMiddleName,
+          guardian_last_name: payload.guardianLastName,
+          guardian_mobile: payload.parentMobile,
+          guardian_email: payload.parentEmail,
+          student_mobile: payload.studentMobile,
+          lead_temperature: payload.leadType,
+          status: payload.status,
+          custom_fields: payload.customValues || payload.customFields || {},
+        }).then((res) => {
+          console.log("[FrontOffice REST API] Live Enquiry updated in MariaDB:", res);
+        }).catch((err) => {
+          console.warn("[FrontOffice REST API Error] Could not update enquiry:", err.message);
+        });
+        dispatch({ type: "UPDATE_ENQUIRY", payload });
+      },
+      deleteEnquiries: (ids) => {
+        const idsList = Array.isArray(ids) ? ids : [ids];
+        frontOfficeService.deleteEnquiry(idsList).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not delete enquiry from backend:", err.message)
+        );
+        dispatch({ type: "DELETE_ENQUIRIES", payload: idsList });
+      },
+      addFollowUp: (enquiryId, followUp) => {
+        frontOfficeService.addFollowup({
+          enquiry_id: enquiryId,
+          date_to_call: followUp.dateToCall || followUp.date,
+          notes: followUp.notes,
+          call_outcome: followUp.outcome,
+        }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not add followup to backend:", err.message)
+        );
+        dispatch({ type: "ADD_FOLLOW_UP", payload: { enquiryId, followUp } });
+      },
       updateFollowUp: (enquiryId, followUpId, patch) =>
         dispatch({
           type: "UPDATE_FOLLOW_UP",
           payload: { enquiryId, followUpId, patch },
         }),
-      convertEnquiry: (id) =>
-        dispatch({ type: "APPROVE_ADMISSION", payload: id }),
-      approveAdmission: (id) =>
-        dispatch({ type: "APPROVE_ADMISSION", payload: id }),
+      convertEnquiry: async (id) => {
+        try {
+          const res = await frontOfficeService.approveAdmission(id);
+          const data = res?.data || res;
+          dispatch({
+            type: "APPROVE_ADMISSION",
+            payload: id,
+            security_token: data?.security_token,
+          });
+        } catch (err) {
+          console.warn("[FrontOffice API Error] Could not approve admission on backend:", err.message);
+          dispatch({ type: "APPROVE_ADMISSION", payload: id });
+        }
+      },
+      approveAdmission: async (id) => {
+        try {
+          const res = await frontOfficeService.approveAdmission(id);
+          const data = res?.data || res;
+          dispatch({
+            type: "APPROVE_ADMISSION",
+            payload: id,
+            security_token: data?.security_token,
+          });
+        } catch (err) {
+          console.warn("[FrontOffice API Error] Could not approve admission on backend:", err.message);
+          dispatch({ type: "APPROVE_ADMISSION", payload: id });
+        }
+      },
       sendAdmissionForm: (id) => {
-        const token = makeAdmissionToken();
+        const token = makeAdmissionToken(id);
+        frontOfficeService.updateEnquiry({ id, status: "Form Sent", security_token: token }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not update status to Form Sent:", err.message)
+        );
         dispatch({ type: "SEND_ADMISSION_FORM", payload: { id, token } });
         return token;
       },
-      submitParentAdmissionForm: (token, form) =>
+      submitParentAdmissionForm: (token, form, isFaculty = false) => {
+        frontOfficeService.submitParentFormByToken({ token, ...form }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not submit parent form by token:", err.message)
+        );
         dispatch({
           type: "SUBMIT_PARENT_ADMISSION_FORM",
-          payload: { token, form },
-        }),
-      requestAdmissionCorrections: (id, notes) =>
+          payload: { token, form, isFaculty },
+        });
+      },
+      requestAdmissionCorrections: (id, notes) => {
+        frontOfficeService.updateEnquiry({ id, status: "Corrections Requested", correction_notes: notes }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not update status to Corrections Requested:", err.message)
+        );
         dispatch({
           type: "REQUEST_ADMISSION_CORRECTIONS",
           payload: { id, notes },
-        }),
-      verifyAdmission: (id) =>
-        dispatch({ type: "VERIFY_ADMISSION", payload: id }),
+        });
+      },
+      verifyAdmission: (id) => {
+        frontOfficeService.updateEnquiry({ id, status: "Verified" }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not update status to Verified:", err.message)
+        );
+        dispatch({ type: "VERIFY_ADMISSION", payload: id });
+      },
       createAdmissionAccounts: (id) => {
         const admissionNumber = makeAdmissionNumber();
         const studentPassword = makeTempPassword();
         const parentActivationToken = makeParentActivationToken();
+        frontOfficeService.createAdmissionAccounts(id).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not create admission accounts on backend:", err.message)
+        );
         dispatch({
           type: "CREATE_ADMISSION_ACCOUNTS",
           payload: {
@@ -761,37 +1206,153 @@ export function FrontOfficeProvider({ children }) {
         const id =
           payload.id ||
           `vis-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        const formattedContact = payload.contact ? (payload.contact.startsWith("+") ? payload.contact : `+91${payload.contact}`) : "+919876543210";
+        frontOfficeService.checkInVisitor({
+          visitor_name: payload.visitorName || payload.name,
+          contact_number: formattedContact,
+          purpose_of_visit: payload.purpose || "General Inquiry",
+          relation_to_student: payload.relation || "",
+          student: payload.studentName || payload.studentId || "",
+          whom_to_meet: payload.whomToMeet || "",
+          remarks: payload.remarks || "Visitor check-in",
+        }).then((res) => {
+          console.log("[FrontOffice REST API] Live Visitor check-in created in MariaDB:", res);
+          const savedData = res?.data || res;
+          if (savedData?.name && savedData.name !== id) {
+            dispatch({
+              type: "UPDATE_VISITOR",
+              payload: {
+                id,
+                id_new: savedData.name,
+                name: savedData.visitor_name || payload.name,
+                visitorName: savedData.visitor_name || payload.name,
+              },
+            });
+          }
+        }).catch((err) => {
+          console.warn("[FrontOffice REST API Error] Could not check-in visitor:", err.message);
+        });
+
         dispatch({ type: "ADD_VISITOR", payload: { ...payload, id } });
         return id;
       },
-      updateVisitor: (payload) =>
-        dispatch({ type: "UPDATE_VISITOR", payload }),
-      deleteVisitor: (id) => dispatch({ type: "DELETE_VISITOR", payload: id }),
-      deleteVisitors: (ids) =>
-        dispatch({ type: "DELETE_VISITOR", payload: ids }),
-      checkOutVisitor: (id, checkOut) =>
-        dispatch({ type: "CHECK_OUT_VISITOR", payload: { id, checkOut } }),
+      updateVisitor: (payload) => {
+        frontOfficeService.updateVisitor({
+          id: payload.id,
+          visitor_name: payload.visitorName || payload.name,
+          contact_number: payload.contact,
+          purpose_of_visit: payload.purpose,
+          relation_to_student: payload.relation,
+          student: payload.studentName || payload.studentId,
+          whom_to_meet: payload.whomToMeet,
+          remarks: payload.remarks,
+        }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not update visitor on backend:", err.message)
+        );
+        dispatch({ type: "UPDATE_VISITOR", payload });
+      },
+      deleteVisitor: (id) => {
+        frontOfficeService.deleteVisitor([id]).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not delete visitor from backend:", err.message)
+        );
+        dispatch({ type: "DELETE_VISITOR", payload: id });
+      },
+      deleteVisitors: (ids) => {
+        const idsList = Array.isArray(ids) ? ids : [ids];
+        frontOfficeService.deleteVisitor(idsList).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not delete visitors from backend:", err.message)
+        );
+        dispatch({ type: "DELETE_VISITOR", payload: idsList });
+      },
+      checkOutVisitor: (id, checkOut) => {
+        frontOfficeService.checkOutVisitor(id).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not check out visitor on backend:", err.message)
+        );
+        dispatch({ type: "CHECK_OUT_VISITOR", payload: { id, checkOut } });
+      },
       addComplaint: (payload) => {
         const id =
           payload.id ||
           `cmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        const formattedMobile = payload.mobile ? (payload.mobile.startsWith("+") ? payload.mobile : `+91${payload.mobile}`) : "+919876543210";
+        frontOfficeService.registerComplaint({
+          complainant_name: payload.complainantName || payload.complainant,
+          relation_to_student: payload.relation || "Mother",
+          student: payload.studentId || payload.student || "",
+          mobile_number: formattedMobile,
+          nature_of_complaint: payload.nature || "General",
+          source: payload.source || "Offline · Parent / Guardian",
+          brief_discussion: payload.briefDiscussion || payload.description || "",
+        }).then((res) => {
+          console.log("[FrontOffice REST API] Live Complaint registered in MariaDB:", res);
+          const savedData = res?.data || res;
+          if (savedData?.name && savedData.name !== id) {
+            dispatch({ type: "UPDATE_COMPLAINT", payload: { id, id_new: savedData.name, name: savedData.name } });
+          }
+        }).catch((err) => {
+          console.warn("[FrontOffice REST API Error] Could not register complaint:", err.message);
+        });
+
         dispatch({ type: "ADD_COMPLAINT", payload: { ...payload, id } });
         return id;
       },
-      updateComplaint: (payload) =>
-        dispatch({ type: "UPDATE_COMPLAINT", payload }),
-      deleteComplaint: (id) =>
-        dispatch({ type: "DELETE_COMPLAINT", payload: id }),
-      deleteComplaints: (ids) =>
-        dispatch({ type: "DELETE_COMPLAINT", payload: ids }),
-      addCustomField: (payload) =>
-        dispatch({ type: "ADD_CUSTOM_FIELD", payload }),
-      updateCustomField: (payload) =>
-        dispatch({ type: "UPDATE_CUSTOM_FIELD", payload }),
-      deleteCustomField: (id) =>
-        dispatch({ type: "DELETE_CUSTOM_FIELD", payload: id }),
-      reorderCustomFields: (payload) =>
-        dispatch({ type: "REORDER_CUSTOM_FIELDS", payload }),
+      updateComplaint: (payload) => {
+        frontOfficeService.updateComplaint({
+          id: payload.id,
+          complainant_name: payload.complainantName || payload.complainant,
+          relation_to_student: payload.relation,
+          mobile_number: payload.mobile || payload.contact,
+          nature_of_complaint: payload.nature,
+          source: payload.source,
+          brief_discussion: payload.briefDiscussion || payload.description,
+          status: payload.status,
+          resolution_notes: payload.resolutionNotes || payload.resolution_notes || payload.notes,
+          assigned_to: payload.assignedTo || payload.assigned_to,
+        }).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not update complaint on backend:", err.message)
+        );
+        dispatch({ type: "UPDATE_COMPLAINT", payload });
+      },
+      deleteComplaint: (id) => {
+        frontOfficeService.deleteComplaint([id]).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not delete complaint from backend:", err.message)
+        );
+        dispatch({ type: "DELETE_COMPLAINT", payload: id });
+      },
+      deleteComplaints: (ids) => {
+        const idsList = Array.isArray(ids) ? ids : [ids];
+        frontOfficeService.deleteComplaint(idsList).catch((err) =>
+          console.warn("[FrontOffice API Error] Could not delete complaints from backend:", err.message)
+        );
+        dispatch({ type: "DELETE_COMPLAINT", payload: idsList });
+      },
+      addCustomField: (payload) => {
+        dispatch({ type: "ADD_CUSTOM_FIELD", payload });
+        setTimeout(() => {
+          const list = [...state.customFields, { ...payload, id: uid("cf"), active: true, system: false }];
+          frontOfficeService.saveCustomFields(list).catch(() => { });
+        }, 50);
+      },
+      updateCustomField: (payload) => {
+        dispatch({ type: "UPDATE_CUSTOM_FIELD", payload });
+        setTimeout(() => {
+          const list = state.customFields.map((f) => (f.id === payload.id ? { ...f, ...payload } : f));
+          frontOfficeService.saveCustomFields(list).catch(() => { });
+        }, 50);
+      },
+      deleteCustomField: (id) => {
+        dispatch({ type: "DELETE_CUSTOM_FIELD", payload: id });
+        setTimeout(() => {
+          const list = state.customFields.filter((f) => f.id !== id);
+          frontOfficeService.saveCustomFields(list).catch(() => { });
+        }, 50);
+      },
+      reorderCustomFields: (payload) => {
+        dispatch({ type: "REORDER_CUSTOM_FIELDS", payload });
+        frontOfficeService.saveCustomFields(payload).catch(() => { });
+      },
       updateSystemField: (payload) =>
         dispatch({ type: "UPDATE_SYSTEM_FIELD", payload }),
       deleteSystemField: (id) =>

@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useFrontOffice } from "../context/FrontOfficeContext";
-import { VISITOR_PURPOSES, VISITOR_RELATIONS, todayISO, formatStudentLabel } from "../data/seed";
+import { VISITOR_PURPOSES, VISITOR_RELATIONS, todayISO, formatStudentLabel, smartSearchMatch, formatDateTimeDMY } from "../data/seed";
 import {
   EmptyState,
   Field,
   Modal,
+  Pagination,
+  PhoneInput,
+  RowPerPageSelect,
   SlideOver,
+  ExportModal,
+  exportToPdf,
+  formatPhone,
   btnPrimary,
   btnSecondary,
   inputClass,
@@ -96,6 +102,9 @@ function rangeForPreset(preset, customFrom, customTo) {
   today.setHours(0, 0, 0, 0);
   const end = toISODate(today);
 
+  if (preset === "all") {
+    return { from: "1970-01-01", to: "2099-12-31" };
+  }
   if (preset === "today") {
     return { from: end, to: end };
   }
@@ -122,6 +131,7 @@ function rangeForPreset(preset, customFrom, customTo) {
 }
 
 const RANGE_PRESETS = [
+  { id: "all", label: "All" },
   { id: "today", label: "Today" },
   { id: "week", label: "Last week" },
   { id: "month", label: "Last month" },
@@ -245,7 +255,7 @@ export default function VisitorsPage() {
     deleteVisitors,
     checkOutVisitor,
   } = useFrontOffice();
-  const [rangePreset, setRangePreset] = useState("today");
+  const [rangePreset, setRangePreset] = useState("all");
   const [customFrom, setCustomFrom] = useState(todayISO());
   const [customTo, setCustomTo] = useState(todayISO());
   const [searchName, setSearchName] = useState("");
@@ -260,6 +270,14 @@ export default function VisitorsPage() {
   const [form, setForm] = useState(emptyForm);
   const [studentQuery, setStudentQuery] = useState("");
   const [errors, setErrors] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [rangePreset, customFrom, customTo, searchName, filterPurpose, filterWhomToMeet]);
 
   const selected = visitors.find((v) => v.id === selectedId) || null;
   const editing = visitors.find((v) => v.id === editingId) || null;
@@ -275,7 +293,7 @@ export default function VisitorsPage() {
   );
 
   const visitorNameSuggestions = useMemo(
-    () => [...new Set(visitors.map((v) => v.name).filter(Boolean))],
+    () => [...new Set([...visitors.map((v) => v.name), ...visitors.map((v) => v.studentName)].filter(Boolean))],
     [visitors]
   );
 
@@ -306,7 +324,7 @@ export default function VisitorsPage() {
         const day = (v.checkIn || "").slice(0, 10);
         if (!day) return false;
         if (day < from || day > to) return false;
-        if (nameQ && !v.name?.toLowerCase().includes(nameQ)) return false;
+        if (nameQ && !smartSearchMatch(v, nameQ, ["name", "contact", "studentName", "scholarNumber", "className"])) return false;
         if (filterPurpose && v.purpose !== filterPurpose) return false;
         if (whomQ && !String(v.whomToMeet || "").toLowerCase().includes(whomQ)) {
           return false;
@@ -315,6 +333,14 @@ export default function VisitorsPage() {
       })
       .sort((a, b) => (b.checkIn || "").localeCompare(a.checkIn || ""));
   }, [visitors, from, to, searchName, filterPurpose, filterWhomToMeet]);
+
+  const totalItems = list.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedList = useMemo(
+    () => list.slice(startIndex, startIndex + pageSize),
+    [list, startIndex, pageSize]
+  );
 
   const visibleIds = list.map((v) => v.id);
   const allVisibleSelected =
@@ -366,7 +392,29 @@ export default function VisitorsPage() {
   ];
 
   const handleExportVisitors = () => {
-    downloadCsv(`visitors-${todayISO()}.csv`, toCsv(list, visitorCsvColumns));
+    setShowExportModal(true);
+  };
+
+  const getExportRecords = () => {
+    if (selectedIds.length > 0) {
+      return visitors.filter((v) => selectedIds.includes(v.id));
+    }
+    return list;
+  };
+
+  const handleExportCsv = () => {
+    const dataToExport = getExportRecords();
+    downloadCsv(`visitors-${todayISO()}.csv`, toCsv(dataToExport, visitorCsvColumns));
+  };
+
+  const handleExportPdf = () => {
+    const dataToExport = getExportRecords();
+    exportToPdf(
+      "Visitor Log Report",
+      "School Front Office Management System",
+      visitorCsvColumns,
+      dataToExport
+    );
   };
 
   const handleImportVisitors = async () => {
@@ -473,23 +521,28 @@ export default function VisitorsPage() {
 
   const openEdit = (v) => {
     setEditingId(v.id);
+    const sName = v.studentName || v.student || "";
+    const match = students.find(
+      (s) => s.name.toLowerCase() === sName.toLowerCase() || (v.studentId && s.id === v.studentId)
+    );
+
     setForm({
       name: v.name || "",
       purpose: v.purpose || VISITOR_PURPOSES[0],
       relation: v.relation || "",
       contact: v.contact || "",
-      studentId: v.studentId || "",
-      studentName: v.studentName || "",
-      className: v.className || "",
-      section: v.section || "",
-      scholarNumber: v.scholarNumber || "",
+      studentId: match?.id || v.studentId || (sName ? `student-${sName}` : ""),
+      studentName: match?.name || sName,
+      className: match?.className || v.className || "",
+      section: match?.section || v.section || "",
+      scholarNumber: match?.scholarNumber || v.scholarNumber || "",
       whomToMeet: v.whomToMeet || "",
       checkIn: v.checkIn || nowLocal(),
       remarks: v.remarks || "",
     });
     setStudentQuery(
-      v.studentId
-        ? `${v.studentName || ""} (${v.scholarNumber || ""})`.trim()
+      sName
+        ? `${sName}${match?.scholarNumber ? ` (${match.scholarNumber})` : ""}`
         : ""
     );
     setErrors({});
@@ -499,14 +552,39 @@ export default function VisitorsPage() {
 
   const submit = (e) => {
     e.preventDefault();
+
+    let currentStudentId = form.studentId;
+    let currentStudentName = form.studentName;
+    let currentStudent = null;
+
+    if (studentQuery.trim()) {
+      const q = studentQuery.trim().toLowerCase();
+      const match = students.find(
+        (s) =>
+          s.name.toLowerCase() === q ||
+          s.scholarNumber?.toLowerCase() === q ||
+          q.startsWith(s.name.toLowerCase())
+      );
+      if (match) {
+        currentStudentId = match.id;
+        currentStudentName = match.name;
+        currentStudent = match;
+      } else {
+        currentStudentName = studentQuery.trim();
+        if (!currentStudentId) currentStudentId = `student-${currentStudentName}`;
+      }
+    }
+
     const next = {};
     if (!form.name.trim()) next.name = "Required";
     if (!form.purpose) next.purpose = "Required";
-    if (needsStudent && !form.studentId) next.student = "Select a student";
+    if (needsStudent && !currentStudentId && !currentStudentName) {
+      next.student = "Please select or enter student name";
+    }
     if (needsStudent && !form.relation) next.relation = "Required";
     if (
       form.purpose === "Meet Staff" &&
-      form.studentId &&
+      (currentStudentId || currentStudentName) &&
       !form.relation
     ) {
       next.relation = "Required";
@@ -516,8 +594,20 @@ export default function VisitorsPage() {
     }
     setErrors(next);
     if (Object.keys(next).length) return;
+
     const payload = {
       ...form,
+      studentName: currentStudentName || form.studentName,
+      studentId: currentStudentId || form.studentId,
+      ...(currentStudent
+        ? {
+            studentId: currentStudent.id,
+            studentName: currentStudent.name,
+            className: currentStudent.className,
+            section: currentStudent.section || "",
+            scholarNumber: currentStudent.scholarNumber,
+          }
+        : {}),
       whomToMeet: form.purpose === "Meet Student" ? "" : form.whomToMeet,
     };
     if (editingId) {
@@ -535,9 +625,7 @@ export default function VisitorsPage() {
 
   const formatCheckInOut = (value) => {
     if (!value) return "—";
-    const [day, time] = value.split("T");
-    if (from === to) return time || value;
-    return time ? `${day} ${time}` : day || value;
+    return formatDateTimeDMY(value);
   };
 
   return (
@@ -575,12 +663,12 @@ export default function VisitorsPage() {
               ))}
             </select>
           </Field>
-          <Field label="Search Name">
+          <Field label="Search Name / Student">
             <SuggestSearch
               value={searchName}
               onChange={setSearchName}
               suggestions={visitorNameSuggestions}
-              placeholder="Visitor name..."
+              placeholder="Search visitor or student..."
             />
           </Field>
           <Field label="Purpose">
@@ -635,7 +723,20 @@ export default function VisitorsPage() {
         onDelete={() => setConfirmBulkDelete(true)}
       />
 
-      <div className="overflow-hidden rounded-lg bg-white shadow-sm">
+      <div className="overflow-hidden rounded-lg bg-white shadow-sm border border-gray-200">
+        <div className="border-b border-gray-100 bg-white px-5 py-3 text-sm text-gray-600">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 font-medium">Row Per Page</span>
+            <RowPerPageSelect
+              value={pageSize}
+              onChange={(sz) => {
+                setPageSize(sz);
+                setCurrentPage(1);
+              }}
+            />
+            <span className="text-gray-500 font-medium">Entries</span>
+          </div>
+        </div>
         {list.length === 0 ? (
           <div className="p-6">
             <EmptyState message="No visitors match your filters." />
@@ -663,7 +764,7 @@ export default function VisitorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map((v) => {
+                {paginatedList.map((v) => {
                   const checked = selectedIds.includes(v.id);
                   return (
                     <tr
@@ -684,7 +785,10 @@ export default function VisitorsPage() {
                           aria-label={`Select ${v.name}`}
                         />
                       </td>
-                      <td className="px-3 py-3 font-medium">{v.name}</td>
+                      <td className="px-3 py-3 font-medium">
+                        {v.name}
+                        {v.contact ? <span className="block text-xs font-normal text-gray-500">{formatPhone(v.contact)}</span> : null}
+                      </td>
                       <td className="px-3 py-3">{v.relation || "—"}</td>
                       <td className="px-3 py-3">{v.purpose}</td>
                       <td className="px-3 py-3">
@@ -734,6 +838,12 @@ export default function VisitorsPage() {
             </table>
           </div>
         )}
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       <Modal
@@ -751,12 +861,10 @@ export default function VisitorsPage() {
           </Field>
 
           <Field label="Contact Number">
-            <input
-              className={inputClass}
+            <PhoneInput
               value={form.contact}
-              onChange={(e) =>
-                set("contact", e.target.value.replace(/\D/g, "").slice(0, 10))
-              }
+              onChange={(val) => set("contact", val)}
+              placeholder="Enter contact number"
             />
           </Field>
 
@@ -800,9 +908,9 @@ export default function VisitorsPage() {
                 required={needsStudent}
                 error={errors.student}
               >
-                {form.studentId ? (
+                {form.studentId || form.studentName ? (
                   <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                    <span>{formatStudentLabel(form)}</span>
+                    <span className="font-semibold text-gray-900">{form.studentName || formatStudentLabel(form)}</span>
                     <button
                       type="button"
                       className="text-sm font-medium text-red-600 hover:underline"
@@ -865,14 +973,31 @@ export default function VisitorsPage() {
             </Field>
           ) : null}
 
-          <Field label="Check-in Time">
-            <input
-              type="datetime-local"
-              className={inputClass}
-              value={form.checkIn}
-              onChange={(e) => set("checkIn", e.target.value)}
-            />
-          </Field>
+          {!editingId ? (
+            <Field label="Check-in Time">
+              <input
+                type="datetime-local"
+                className={inputClass}
+                value={form.checkIn}
+                onChange={(e) => set("checkIn", e.target.value)}
+              />
+            </Field>
+          ) : (
+            <>
+              <Field label="Check-in Time">
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 cursor-not-allowed">
+                  {formatCheckInOut(form.checkIn)}
+                </div>
+              </Field>
+              {editing?.checkOut ? (
+                <Field label="Check-out Time">
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 cursor-not-allowed">
+                    {formatCheckInOut(editing.checkOut)}
+                  </div>
+                </Field>
+              ) : null}
+            </>
+          )}
 
           <Field label="Remarks">
             <textarea
@@ -930,6 +1055,15 @@ export default function VisitorsPage() {
         confirmLabel="Delete"
         onClose={() => setConfirmDeleteId(null)}
         onConfirm={handleSingleDelete}
+      />
+
+      <ExportModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        totalCount={list.length}
+        selectedCount={selectedIds.length}
+        onExportCsv={handleExportCsv}
+        onExportPdf={handleExportPdf}
       />
     </div>
   );

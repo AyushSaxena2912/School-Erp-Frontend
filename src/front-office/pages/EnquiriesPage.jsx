@@ -2,18 +2,27 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import {
+  LEAD_TYPES,
   ADMISSION_STATUSES,
   CALL_OUTCOMES,
   formatFollowUpWhen,
   getNextFollowUpDate,
+  formatDateDMY,
   todayISO,
+  smartSearchMatch,
 } from "../data/seed";
 import {
   EmptyState,
   Field,
   Modal,
+  Pagination,
+  RowPerPageSelect,
   SlideOver,
   StatusBadge,
+  DateInput,
+  ExportModal,
+  exportToPdf,
+  formatPhone,
   btnPrimary,
   btnSecondary,
   inputClass,
@@ -117,13 +126,11 @@ function FollowUpForm({ onSubmit, initial }) {
       </div>
 
       <Field label="Date to call" required>
-        <input
-          type="date"
-          className={inputClass}
+        <DateInput
           value={dateToCall}
-          onChange={(e) => {
+          onChange={(val) => {
             setCustom(true);
-            setDateToCall(e.target.value);
+            setDateToCall(val);
           }}
         />
       </Field>
@@ -156,11 +163,9 @@ function FollowUpForm({ onSubmit, initial }) {
 
       {outcome === "Needs Another Follow-up" ? (
         <Field label="Next follow-up date" required>
-          <input
-            type="date"
-            className={inputClass}
+          <DateInput
             value={nextDate}
-            onChange={(e) => setNextDate(e.target.value)}
+            onChange={(val) => setNextDate(val)}
           />
         </Field>
       ) : null}
@@ -205,6 +210,7 @@ export default function EnquiriesPage() {
     requestAdmissionCorrections,
     verifyAdmission,
     createAdmissionAccounts,
+    customFields,
   } = useFrontOffice();
   const [params, setParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState(params.get("open") || null);
@@ -216,12 +222,22 @@ export default function EnquiriesPage() {
   const [correctionError, setCorrectionError] = useState("");
   const [showCorrectionSent, setShowCorrectionSent] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
   const [accountInfo, setAccountInfo] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [search, setSearch] = useState("");
   const [filterClass, setFilterClass] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterLeadType, setFilterLeadType] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [search, filterClass, filterStatus, filterLeadType]);
 
   useEffect(() => {
     const open = params.get("open");
@@ -230,7 +246,13 @@ export default function EnquiriesPage() {
     if (fu) setFollowUpFor(fu);
   }, [params]);
 
-  const className = (id) => classes.find((c) => c.id === id)?.name || "—";
+  const className = (id) => {
+    if (!id) return "—";
+    const found = classes.find(
+      (c) => c.id === id || c.name === id || c.id === `class-${id}`.toLowerCase() || c.name.toLowerCase() === String(id).toLowerCase()
+    );
+    return found?.name || id || "—";
+  };
 
   const closeFollowUp = () => {
     setFollowUpFor(null);
@@ -263,28 +285,50 @@ export default function EnquiriesPage() {
 
   const filtered = useMemo(() => {
     return enquiries.filter((e) => {
-      const q = search.trim().toLowerCase();
-      if (q) {
-        const hay = [
-          e.studentName,
-          e.parentName,
-          e.guardianName,
-          e.contact,
-          e.parentMobile,
-          e.parentEmail,
-          e.studentMobile,
-          e.admissionNumber,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (search.trim()) {
+        const isMatch = smartSearchMatch(e, search, [
+          "studentName",
+          "parentName",
+          "guardianName",
+          "contact",
+          "parentMobile",
+          "parentEmail",
+          "studentMobile",
+          "admissionNumber",
+          "className",
+          "classId",
+        ]);
+        if (!isMatch) return false;
       }
-      if (filterClass && e.classId !== filterClass) return false;
-      if (filterStatus && e.status !== filterStatus) return false;
+      if (filterClass && filterClass !== "all" && filterClass !== "All") {
+        const matchClass = classes.find((c) => c.id === filterClass || c.name === filterClass);
+        const targetName = matchClass?.name || filterClass;
+        const targetId = matchClass?.id || filterClass;
+        const eClass = e.className || e.classId;
+        if (e.classId !== targetId && e.className !== targetName && eClass !== targetName && eClass !== targetId) {
+          return false;
+        }
+      }
+      if (filterStatus && filterStatus !== "all" && filterStatus !== "All" && e.status !== filterStatus) return false;
+      if (
+        filterLeadType &&
+        filterLeadType !== "all" &&
+        filterLeadType !== "All" &&
+        e.leadType !== filterLeadType &&
+        e.lead_temperature !== filterLeadType
+      )
+        return false;
       return true;
     });
-  }, [enquiries, search, filterClass, filterStatus]);
+  }, [enquiries, search, filterClass, filterStatus, filterLeadType]);
+
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedEnquiries = useMemo(
+    () => filtered.slice(startIndex, startIndex + pageSize),
+    [filtered, startIndex, pageSize]
+  );
 
   const selected = enquiries.find((e) => e.id === selectedId) || null;
 
@@ -321,11 +365,8 @@ export default function EnquiriesPage() {
   };
 
   const getParentMobile = (e) => {
-    const mobile = (e.parentMobile || "").replace(/\D/g, "");
-    if (mobile) return mobile;
-    const contact = String(e.contact || "").trim();
-    if (/^\d{10}$/.test(contact)) return contact;
-    return "";
+    const raw = e.parentMobile || e.contact || e.studentMobile || "";
+    return formatPhone(raw);
   };
 
   const getParentEmail = (e) => {
@@ -358,13 +399,35 @@ export default function EnquiriesPage() {
     },
     { key: "leadType", label: "Lead Type" },
     { key: "status", label: "Status" },
-    { key: "createdAt", label: "Inquiry Date" },
+    { key: "createdAt", label: "Inquiry Date", get: (e) => formatDateDMY(e.createdAt) },
   ];
 
   const handleExportEnquiries = () => {
+    setShowExportModal(true);
+  };
+
+  const getExportRecords = () => {
+    if (selectedIds.length > 0) {
+      return enquiries.filter((e) => selectedIds.includes(e.id));
+    }
+    return filtered;
+  };
+
+  const handleExportCsv = () => {
+    const dataToExport = getExportRecords();
     downloadCsv(
       `admission-inquiries-${todayISO()}.csv`,
-      toCsv(filtered, enquiryCsvColumns)
+      toCsv(dataToExport, enquiryCsvColumns)
+    );
+  };
+
+  const handleExportPdf = () => {
+    const dataToExport = getExportRecords();
+    exportToPdf(
+      "Admission Inquiry Report",
+      "School Front Office Management System",
+      enquiryCsvColumns,
+      dataToExport
     );
   };
 
@@ -450,8 +513,8 @@ export default function EnquiriesPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Admission Inquiry</h2>
-          <p className="text-sm text-gray-500">
-            Step 1–6 pipeline: inquiry → approve → parent form → verify → accounts
+          <p className="mt-1 text-sm text-gray-500">
+            Track and manage student admission inquiries and application status.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -496,6 +559,22 @@ export default function EnquiriesPage() {
             </select>
           </Field>
         </div>
+        <div className="w-40">
+          <Field label="Lead Type">
+            <select
+              className={selectClass}
+              value={filterLeadType}
+              onChange={(e) => setFilterLeadType(e.target.value)}
+            >
+              <option value="">All</option>
+              {LEAD_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
         <div className="w-48">
           <Field label="Status">
             <select
@@ -517,18 +596,26 @@ export default function EnquiriesPage() {
       {selectedIds.length > 0 ? (
         <BulkActionBar
           count={selectedIds.length}
+          label={selectedIds.length === 1 ? "inquiry selected" : "inquiries selected"}
           onClear={() => setSelectedIds([])}
-          actions={[
-            {
-              label: "Delete",
-              danger: true,
-              onClick: () => setConfirmBulkDelete(true),
-            },
-          ]}
+          onDelete={() => setConfirmBulkDelete(true)}
         />
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-100 bg-white px-5 py-3 text-sm text-gray-600">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 font-medium">Row Per Page</span>
+            <RowPerPageSelect
+              value={pageSize}
+              onChange={(sz) => {
+                setPageSize(sz);
+                setCurrentPage(1);
+              }}
+            />
+            <span className="text-gray-500 font-medium">Entries</span>
+          </div>
+        </div>
         {filtered.length === 0 ? (
           <EmptyState message="No inquiries found." />
         ) : (
@@ -556,7 +643,7 @@ export default function EnquiriesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((e) => (
+                {paginatedEnquiries.map((e) => (
                   <tr key={e.id} className="hover:bg-gray-50/80">
                     <td className="px-3 py-3">
                       <input
@@ -605,6 +692,12 @@ export default function EnquiriesPage() {
             </table>
           </div>
         )}
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       <Modal
@@ -738,41 +831,59 @@ export default function EnquiriesPage() {
 
       <Modal
         open={!!accountInfo}
-        title="Accounts created"
+        title="Account Credentials"
         onClose={() => setAccountInfo(null)}
       >
         {accountInfo ? (
-          <div className="space-y-3 text-sm">
-            <p className="text-gray-600">
-              Step 6 — share these credentials securely (demo display).
+          <div className="space-y-4 text-sm">
+            <p className="text-xs text-gray-500">
+              Student and parent login credentials generated successfully.
             </p>
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="font-medium text-gray-900">Student login</p>
-              <p className="mt-1 text-gray-700">
-                Admission no:{" "}
-                <span className="font-semibold">
-                  {accountInfo.admissionNumber}
-                </span>
-              </p>
-              <p className="text-gray-700">
-                Temporary password:{" "}
-                <span className="font-semibold">
-                  {accountInfo.studentPassword}
-                </span>
-              </p>
+
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3.5 text-xs">
+              <div>
+                <h4 className="font-semibold text-gray-900 text-xs mb-2">Student Account</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-gray-500 block font-medium">User ID</span>
+                    <span className="font-semibold text-gray-900">{accountInfo.admissionNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block font-medium">Password</span>
+                    <span className="font-mono text-gray-900">{accountInfo.studentPassword || "Stud@2026#"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <hr className="border-gray-100" />
+
+              <div>
+                <h4 className="font-semibold text-gray-900 text-xs mb-2">Parent Account</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-gray-500 block font-medium">User ID</span>
+                    <span className="font-semibold text-gray-900">{accountInfo.parentUsername || accountInfo.parentMobile || accountInfo.parentEmail || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block font-medium">Password</span>
+                    <span className="font-mono text-gray-900">{accountInfo.parentPassword || accountInfo.parentActivationToken || "Parent@2026#"}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="font-medium text-gray-900">Parent activation</p>
-              <p className="mt-1 break-all text-gray-700">
-                {typeof window !== "undefined"
-                  ? `${window.location.origin}/activate-parent/${accountInfo.parentActivationToken}`
-                  : accountInfo.parentActivationToken}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                Parent sets their own password via this link (email / mobile).
-              </p>
-            </div>
-            <div className="flex justify-end">
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => {
+                  const text = `Student ID: ${accountInfo.admissionNumber}\nPassword: ${accountInfo.studentPassword || "Stud@2026#"}\n\nParent ID: ${accountInfo.parentUsername || "—"}\nPassword: ${accountInfo.parentPassword || "Parent@2026#"}`;
+                  navigator.clipboard.writeText(text);
+                  alert("Credentials copied to clipboard!");
+                }}
+              >
+                Copy credentials
+              </button>
               <button
                 type="button"
                 className={btnPrimary}
@@ -831,12 +942,12 @@ export default function EnquiriesPage() {
               </div>
               <div>
                 <dt className="text-gray-500">Inquiry date</dt>
-                <dd className="font-medium">{selected.createdAt || "—"}</dd>
+                <dd className="font-medium">{formatDateDMY(selected.createdAt)}</dd>
               </div>
               <div>
                 <dt className="text-gray-500">Next follow-up</dt>
                 <dd className="font-medium">
-                  {getNextFollowUpDate(selected) || "—"}
+                  {formatDateDMY(getNextFollowUpDate(selected))}
                 </dd>
               </div>
               {selected.admissionNumber ? (
@@ -845,22 +956,57 @@ export default function EnquiriesPage() {
                   <dd className="font-medium">{selected.admissionNumber}</dd>
                 </div>
               ) : null}
+              {customFields && customFields.length > 0 ? (
+                customFields.map((field) => {
+                  const val =
+                    selected.customValues?.[field.id] ||
+                    selected.customValues?.[field.label] ||
+                    (field.id === "cf-garam" ? selected.customValues?.garam : null) ||
+                    (field.id === "cf-paani" ? selected.customValues?.paani : null) ||
+                    "";
+                  if (val === undefined || val === null || val === "") return null;
+                  return (
+                    <div key={field.id || field.label}>
+                      <dt className="text-gray-500">{field.label}</dt>
+                      <dd className="font-medium">{String(val)}</dd>
+                    </div>
+                  );
+                })
+              ) : selected.customValues && typeof selected.customValues === "object" ? (
+                Object.entries(selected.customValues).map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="text-gray-500">{k}</dt>
+                    <dd className="font-medium">{String(v || "—")}</dd>
+                  </div>
+                ))
+              ) : null}
             </dl>
 
-            {selected.admissionToken ? (
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
-                <p className="font-medium text-gray-900">Parent form link</p>
-                <p className="mt-1 break-all text-xs text-gray-600">
-                  {admissionLink(selected.admissionToken)}
-                </p>
-                <button
-                  type="button"
-                  className={`${btnSecondary} mt-2`}
-                  onClick={() => copyLink(selected.admissionToken)}
-                >
-                  {copiedLink ? "Copied" : "Copy link"}
-                </button>
-              </div>
+            {(selected.status === "Form Sent" ||
+            selected.status === "Corrections Requested" ||
+            selected.status === "Corrections Submitted" ||
+            selected.status === "Form Submitted" ||
+            selected.status === "Verified" ||
+            selected.status === "Accounts Created" ||
+            selected.admissionToken) ? (
+              (() => {
+                const token = selected.admissionToken || sendAdmissionForm(selected.id);
+                return (
+                  <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+                    <p className="font-medium text-gray-900">Parent form link</p>
+                    <p className="mt-1 break-all text-xs text-gray-600">
+                      {admissionLink(token)}
+                    </p>
+                    <button
+                      type="button"
+                      className={`${btnSecondary} mt-2`}
+                      onClick={() => copyLink(token)}
+                    >
+                      {copiedLink ? "Copied" : "Copy link"}
+                    </button>
+                  </div>
+                );
+              })()
             ) : null}
 
             {selected.correctionNotes ? (
@@ -932,35 +1078,34 @@ export default function EnquiriesPage() {
                 </button>
               ) : null}
 
-              {selected.admissionToken &&
-              (selected.status === "Form Sent" ||
-                selected.status === "Corrections Requested" ||
-                selected.status === "Corrections Submitted" ||
-                selected.status === "Form Submitted" ||
-                selected.status === "Verified" ||
-                selected.status === "Accounts Created") ? (
-                <>
-                  <button
-                    type="button"
-                    className={btnSecondary}
-                    onClick={() =>
-                      navigate(`/admission/${selected.admissionToken}`)
-                    }
-                  >
-                    Open as parent
-                  </button>
-                  <button
-                    type="button"
-                    className={btnSecondary}
-                    onClick={() =>
-                      navigate(
-                        `/admission/${selected.admissionToken}?preview=1`
-                      )
-                    }
-                  >
-                    Open as faculty
-                  </button>
-                </>
+              {(selected.status === "Form Sent" ||
+              selected.status === "Corrections Requested" ||
+              selected.status === "Corrections Submitted" ||
+              selected.status === "Form Submitted" ||
+              selected.status === "Verified" ||
+              selected.status === "Accounts Created" ||
+              selected.admissionToken) ? (
+                (() => {
+                  const token = selected.admissionToken || sendAdmissionForm(selected.id);
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className={btnSecondary}
+                        onClick={() => navigate(`/admission/${token}`)}
+                      >
+                        Open as parent
+                      </button>
+                      <button
+                        type="button"
+                        className={btnSecondary}
+                        onClick={() => navigate(`/admission/${token}?preview=1`)}
+                      >
+                        Open as faculty
+                      </button>
+                    </>
+                  );
+                })()
               ) : null}
 
               {selected.status === "Form Submitted" ||
@@ -1000,7 +1145,73 @@ export default function EnquiriesPage() {
                   Create accounts
                 </button>
               ) : null}
+
+              {selected.status === "Accounts Created" ? (
+                <button
+                  type="button"
+                  className={btnPrimary}
+                  onClick={() => {
+                    const sid = selected.admissionNumber?.startsWith("STU-")
+                      ? selected.admissionNumber
+                      : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`;
+                    setAccountInfo({
+                      admissionNumber: sid,
+                      studentPassword: selected.studentPassword || "Stud@2026#",
+                      parentUsername: getParentEmail(selected) || getParentMobile(selected) || "parent@school.edu",
+                      parentPassword: selected.parentActivationToken || selected.parentPassword || "Parent@2026#",
+                    });
+                  }}
+                >
+                  View credentials
+                </button>
+              ) : null}
             </div>
+
+            {selected.status === "Accounts Created" ? (
+              <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                  <h3 className="font-semibold text-gray-900">Account Credentials</h3>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-green-700 hover:underline"
+                    onClick={() => {
+                      const sid = selected.admissionNumber?.startsWith("STU-")
+                        ? selected.admissionNumber
+                        : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`;
+                      const text = `Student ID: ${sid}\nPassword: ${selected.studentPassword || "Stud@2026#"}\n\nParent ID: ${getParentEmail(selected) || getParentMobile(selected)}\nPassword: ${selected.parentActivationToken || selected.parentPassword || "Parent@2026#"}`;
+                      navigator.clipboard.writeText(text);
+                      setCopiedCredentials(true);
+                      setTimeout(() => setCopiedCredentials(false), 2000);
+                    }}
+                  >
+                    {copiedCredentials ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-gray-500 block font-medium">Student ID</span>
+                    <span className="font-semibold text-gray-900">
+                      {selected.admissionNumber?.startsWith("STU-")
+                        ? selected.admissionNumber
+                        : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block font-medium">Student Password</span>
+                    <span className="font-mono text-gray-900">{selected.studentPassword || "Stud@2026#"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block font-medium">Parent ID</span>
+                    <span className="font-semibold text-gray-900">{getParentEmail(selected) || getParentMobile(selected) || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block font-medium">Parent Password</span>
+                    <span className="font-mono text-gray-900">{selected.parentActivationToken || selected.parentPassword || "Parent@2026#"}</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <div>
               <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">
@@ -1051,6 +1262,15 @@ export default function EnquiriesPage() {
         confirmLabel="Delete"
         onClose={() => setConfirmBulkDelete(false)}
         onConfirm={handleBulkDelete}
+      />
+
+      <ExportModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        totalCount={filtered.length}
+        selectedCount={selectedIds.length}
+        onExportCsv={handleExportCsv}
+        onExportPdf={handleExportPdf}
       />
     </div>
   );

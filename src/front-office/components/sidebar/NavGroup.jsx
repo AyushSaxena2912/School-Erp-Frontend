@@ -136,7 +136,7 @@ function LeafLink({ item, collapsed, onNavigate, nested }) {
             `flex h-9 w-9 items-center justify-center rounded-md transition ${
               active
                 ? "bg-green-50 text-green-700"
-                : "text-gray-600 hover:bg-gray-50"
+                : "text-gray-600 hover:bg-green-50 hover:text-green-700"
             }`
           }
         >
@@ -159,7 +159,7 @@ function LeafLink({ item, collapsed, onNavigate, nested }) {
                 `block px-3 py-2 text-sm ${
                   active
                     ? "bg-green-50 font-medium text-green-700"
-                    : "text-gray-700 hover:bg-gray-50"
+                    : "text-gray-700 hover:bg-green-50 hover:text-green-700"
                 }`
               }
             >
@@ -184,8 +184,8 @@ function LeafLink({ item, collapsed, onNavigate, nested }) {
           active
             ? "bg-green-50 font-medium text-green-700"
             : nested
-              ? "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
-              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              ? "text-gray-500 hover:bg-green-50 hover:text-green-700"
+              : "text-gray-600 hover:bg-green-50 hover:text-green-700"
         }`
       }
     >
@@ -228,7 +228,7 @@ function SubMenu({ item, collapsed, onNavigate }) {
           className={`flex h-9 w-9 items-center justify-center rounded-md transition ${
             childActive || flyout
               ? "bg-green-50 text-green-700"
-              : "text-gray-600 hover:bg-gray-50"
+              : "text-gray-600 hover:bg-green-50 hover:text-green-700"
           }`}
         >
           <NavIcon name={item.icon || "dashboard"} className="h-5 w-5" />
@@ -259,7 +259,7 @@ function SubMenu({ item, collapsed, onNavigate }) {
                     `block px-3 py-2 text-sm ${
                       active
                         ? "bg-green-50 font-medium text-green-700"
-                        : "text-gray-700 hover:bg-gray-50"
+                        : "text-gray-700 hover:bg-green-50 hover:text-green-700"
                     }`
                   }
                 >
@@ -281,7 +281,7 @@ function SubMenu({ item, collapsed, onNavigate }) {
         className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] transition ${
           childActive
             ? "bg-green-50 font-medium text-green-700"
-            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            : "text-gray-600 hover:bg-green-50 hover:text-green-700"
         }`}
       >
         <NavIcon name={item.icon || "dashboard"} className="h-4 w-4 shrink-0" />
@@ -392,10 +392,18 @@ export default function NavGroup({ group, collapsed, onNavigate }) {
       <button
         type="button"
         onClick={toggleSection}
-        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-gray-700 hover:bg-gray-50"
+        className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
+          hasActive
+            ? "text-green-800 font-semibold"
+            : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+        }`}
         aria-expanded={sectionOpen}
       >
-        <span className="min-w-0 flex-1 text-[12px] font-medium">
+        <span
+          className={`min-w-0 flex-1 text-[12.5px] ${
+            hasActive ? "font-bold text-green-800" : "font-medium text-gray-700"
+          }`}
+        >
           {group.label}
         </span>
         {hasActive && !sectionOpen ? (
@@ -404,9 +412,9 @@ export default function NavGroup({ group, collapsed, onNavigate }) {
         <svg
           viewBox="0 0 20 20"
           fill="currentColor"
-          className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${
-            sectionOpen ? "rotate-90" : ""
-          }`}
+          className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+            hasActive ? "text-green-700" : "text-gray-400"
+          } ${sectionOpen ? "rotate-90" : ""}`}
           aria-hidden
         >
           <path

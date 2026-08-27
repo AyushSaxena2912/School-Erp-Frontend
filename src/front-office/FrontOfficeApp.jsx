@@ -25,14 +25,27 @@ import SettingsPage from "./pages/SettingsPage";
 import ComingSoonPage from "./pages/ComingSoonPage";
 import BranchesPage from "./pages/BranchesPage";
 import BranchFormPage from "./pages/BranchFormPage";
+import StudentDashboardPage from "./pages/StudentDashboardPage";
 
 export default function FrontOfficeApp() {
+  const role = localStorage.getItem("bodhya_user_role");
+
   return (
     <AcademicProvider>
       <NoticesProvider>
         <Routes>
           <Route element={<FrontOfficeLayout />}>
-            <Route index element={<Dashboard />} />
+            <Route
+              index
+              element={
+                role === "student" ? (
+                  <Navigate to="/front-office/student-dashboard" replace />
+                ) : (
+                  <Dashboard />
+                )
+              }
+            />
+            <Route path="student-dashboard" element={<StudentDashboardPage />} />
             <Route path="enquiries" element={<EnquiriesPage />} />
             <Route path="enquiries/new" element={<EnquiryFormPage />} />
             <Route path="enquiries/:id/edit" element={<EnquiryFormPage />} />

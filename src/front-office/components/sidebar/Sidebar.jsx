@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   BRANCH_STORAGE_KEY,
   DEFAULT_BRANCH,
@@ -121,10 +121,15 @@ function BranchPicker({ branches, value, onChange }) {
 
 export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  const [role] = useState(readRole);
+  const [role, setRole] = useState(readRole);
   const [branch, setBranch] = useState(readBranch);
   const { branches } = useFrontOffice();
+
+  useEffect(() => {
+    setRole(readRole());
+  }, [location.pathname]);
 
   const groups = useMemo(
     () => filterGroupsForRole(SIDEBAR_GROUPS, role),

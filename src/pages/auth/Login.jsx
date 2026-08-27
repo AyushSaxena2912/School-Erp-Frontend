@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login } from "../../api/auth";
+import { authService } from "../../services/authService";
 import { EyeIcon, EyeOffIcon } from "../../components/PasswordToggleIcon";
 
 const Login = () => {
@@ -35,10 +35,42 @@ const Login = () => {
     setApiError("");
 
     try {
-      await login({ email, password });
-      navigate("/front-office", { replace: true });
+      const loginId = email.trim();
+      const pwd = password.trim();
+
+      const res = await authService.login(loginId, pwd);
+      if (res?.exc || res?.exc_type || res?.status === "verification_required") {
+        setApiError("Invalid email or password. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      const fullName = res?.full_name || res?.message?.full_name || loginId.split("@")[0];
+      const isStudent =
+        loginId.toLowerCase().startsWith("adm-") ||
+        loginId.toLowerCase().startsWith("enq-") ||
+        loginId.toLowerCase().startsWith("stu-") ||
+        (res?.roles && res.roles.includes("Student")) ||
+        (res?.message?.roles && res.message.roles.includes("Student"));
+
+      const isParent =
+        (res?.roles && res.roles.includes("Parent")) ||
+        (res?.message?.roles && res.message.roles.includes("Parent"));
+
+      const userRole = isStudent ? "Student" : (isParent ? "Guardian" : "Admin");
+
+      localStorage.setItem("bodhya_logged_in", "true");
+      localStorage.setItem("bodhya_user_name", fullName);
+      localStorage.setItem("bodhya_user_email", loginId);
+      localStorage.setItem("bodhya_user_role", userRole);
+
+      if (userRole === "Student") {
+        window.location.href = "/front-office/student-dashboard";
+      } else {
+        window.location.href = "/front-office";
+      }
     } catch (err) {
-      setApiError(err.message || "Login failed. Please try again.");
+      setApiError(err?.message || "Invalid credentials. Please try again.");
       setIsLoading(false);
     }
   };
@@ -58,14 +90,14 @@ const Login = () => {
             </p>
           )}
 
-          {/* Email / Username (Frappe accepts both, e.g. Administrator) */}
+          {/* User ID */}
           <div>
-            <label className="mb-2 block font-medium">Email or Username</label>
+            <label className="mb-2 block font-medium">User ID</label>
 
             <input
               type="text"
               autoComplete="username"
-              placeholder="Enter email or username"
+              placeholder="Enter your User ID"
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);

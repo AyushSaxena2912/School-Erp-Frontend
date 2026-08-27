@@ -1,6 +1,6 @@
 import { btnSecondary } from "./ui";
 
-export default function BulkActionBar({ count, onClear, onDelete, label = "selected" }) {
+export default function BulkActionBar({ count, onClear, onDelete, actions, label = "selected" }) {
   if (!count) return null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5">
@@ -11,13 +11,30 @@ export default function BulkActionBar({ count, onClear, onDelete, label = "selec
         <button type="button" className={btnSecondary} onClick={onClear}>
           Clear
         </button>
-        <button
-          type="button"
-          className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-          onClick={onDelete}
-        >
-          Delete
-        </button>
+        {actions && Array.isArray(actions) && actions.length > 0 ? (
+          actions.map((act, i) => (
+            <button
+              key={i}
+              type="button"
+              className={
+                act.danger
+                  ? "rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                  : btnSecondary
+              }
+              onClick={act.onClick}
+            >
+              {act.label}
+            </button>
+          ))
+        ) : onDelete ? (
+          <button
+            type="button"
+            className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            onClick={onDelete}
+          >
+            Delete
+          </button>
+        ) : null}
       </div>
     </div>
   );

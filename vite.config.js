@@ -1,31 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    dedupe: ["react", "react-dom", "react-router-dom"],
-  },
-  optimizeDeps: {
-    include: [
-      "react",
-      "react-dom",
-      "react-dom/client",
-      "react-router-dom",
-      "react/jsx-dev-runtime",
-      "react/jsx-runtime",
-      "lucide-react",
-    ],
-  },
+  plugins: [react()],
   server: {
-    host: true,
+    host: "0.0.0.0",
     port: 5173,
     strictPort: true,
-    allowedHosts: true,
+    watch: {
+      ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+    },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000",
+        target: "http://13.203.104.98",
         changeOrigin: true,
         headers: {
           Host: "education.local",

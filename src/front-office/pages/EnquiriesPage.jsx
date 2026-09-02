@@ -320,7 +320,7 @@ export default function EnquiriesPage() {
         return false;
       return true;
     });
-  }, [enquiries, search, filterClass, filterStatus, filterLeadType]);
+  }, [enquiries, search, filterClass, filterStatus, filterLeadType, classes]);
 
   const totalItems = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -330,7 +330,11 @@ export default function EnquiriesPage() {
     [filtered, startIndex, pageSize]
   );
 
-  const selected = enquiries.find((e) => e.id === selectedId) || null;
+  const selected = useMemo(() => {
+    if (!selectedId) return null;
+    return enquiries.find((e) => e.id === selectedId || e.name === selectedId) || null;
+  }, [selectedId, enquiries]);
+
 
   const toggleSelect = (id) => {
     setSelectedIds((prev) =>
@@ -1114,7 +1118,7 @@ export default function EnquiriesPage() {
                   <button
                     type="button"
                     className={btnPrimary}
-                    onClick={() => verifyAdmission(selected.id)}
+                    onClick={() => verifyAdmission(selected.id || selected.name)}
                   >
                     Verify & approve
                   </button>
@@ -1138,7 +1142,8 @@ export default function EnquiriesPage() {
                   type="button"
                   className={btnPrimary}
                   onClick={() => {
-                    const info = createAdmissionAccounts(selected.id);
+                    const enquiryTargetId = selected.id || selected.name;
+                    const info = createAdmissionAccounts(enquiryTargetId);
                     setAccountInfo(info);
                   }}
                 >

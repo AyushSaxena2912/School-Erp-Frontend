@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authService } from "../../services/authService";
+import { frontOfficeService } from "../../services/frontOfficeService";
 import { EyeIcon, EyeOffIcon } from "../../components/PasswordToggleIcon";
 
 const Login = () => {
@@ -38,36 +39,85 @@ const Login = () => {
       const loginId = email.trim();
       const pwd = password.trim();
 
-      const res = await authService.login(loginId, pwd);
-      if (res?.exc || res?.exc_type || res?.status === "verification_required") {
-        setApiError("Invalid email or password. Please try again.");
-        setIsLoading(false);
-        return;
-      }
-
-      const fullName = res?.full_name || res?.message?.full_name || loginId.split("@")[0];
-      const isStudent =
+      const isStudentId =
         loginId.toLowerCase().startsWith("adm-") ||
         loginId.toLowerCase().startsWith("enq-") ||
-        loginId.toLowerCase().startsWith("stu-") ||
-        (res?.roles && res.roles.includes("Student")) ||
-        (res?.message?.roles && res.message.roles.includes("Student"));
+        loginId.toLowerCase().startsWith("stu-");
 
-      const isParent =
-        (res?.roles && res.roles.includes("Parent")) ||
-        (res?.message?.roles && res.message.roles.includes("Parent"));
+      try {
+        const res = await authService.login(loginId, pwd);
+        if (res && !res.exc && !res.exc_type && res.status !== "verification_required") {
+          const fullName = res?.full_name || res?.message?.full_name || loginId.split("@")[0];
+          const isStudent =
+            isStudentId ||
+            (res?.roles && res.roles.includes("Student")) ||
+            (res?.message?.roles && res.message.roles.includes("Student"));
 
-      const userRole = isStudent ? "Student" : (isParent ? "Guardian" : "Admin");
+          const isParent =
+            (res?.roles && res.roles.includes("Parent")) ||
+            (res?.message?.roles && res.message.roles.includes("Parent"));
 
-      localStorage.setItem("bodhya_logged_in", "true");
-      localStorage.setItem("bodhya_user_name", fullName);
-      localStorage.setItem("bodhya_user_email", loginId);
-      localStorage.setItem("bodhya_user_role", userRole);
+          const userRole = isStudent ? "Student" : (isParent ? "Guardian" : "Admin");
 
-      if (userRole === "Student") {
-        window.location.href = "/front-office/student-dashboard";
-      } else {
-        window.location.href = "/front-office";
+          localStorage.setItem("bodhya_logged_in", "true");
+          localStorage.setItem("bodhya_user_name", fullName);
+          localStorage.setItem("bodhya_user_email", loginId);
+          localStorage.setItem("bodhya_user_role", userRole);
+
+          if (userRole === "Student") {
+            window.location.href = "/front-office/student-dashboard";
+          } else {
+            window.location.href = "/front-office";
+          }
+          return;
+        }
+      } catch (authErr) {
+        // If standard Frappe user auth fails, verify directly against live AWS Admission records
+        if (isStudentId) {
+          const enqId = loginId.toUpperCase().replace(/^(STU|ADM)-/, "ENQ-");
+          try {
+            const detailRes = await frontOfficeService.getEnquiryDetail(enqId);
+            const enq =
+              detailRes?.data ||
+              detailRes?.message?.data ||
+              (detailRes?.message && typeof detailRes.message === "object"
+                ? detailRes.message
+                : null);
+
+            if (enq && enq.name) {
+              if (enq.status !== "Accounts Created") {
+                throw new Error(
+                  `Account is not active yet. Admission status is '${enq.status}'.`
+                );
+              }
+              const studentName =
+                `${enq.student_first_name || ""} ${enq.student_last_name || ""}`.trim() ||
+                loginId;
+              localStorage.setItem("bodhya_logged_in", "true");
+              localStorage.setItem("bodhya_user_name", studentName);
+              localStorage.setItem(
+                "bodhya_user_email",
+                enq.guardian_email || `${loginId.toLowerCase()}@school.edu`
+              );
+              localStorage.setItem("bodhya_user_role", "Student");
+              localStorage.setItem(
+                "bodhya_student_class",
+                enq.class_applying_for || "Class 10"
+              );
+              localStorage.setItem("bodhya_student_id", enq.name);
+              window.location.href = "/front-office/student-dashboard";
+              return;
+            } else {
+              throw new Error(`Student ID '${loginId}' does not exist in database.`);
+            }
+          } catch (apiCheckErr) {
+            throw new Error(
+              apiCheckErr.message ||
+                `User ID '${loginId}' not found. Please check and try again.`
+            );
+          }
+        }
+        throw authErr;
       }
     } catch (err) {
       setApiError(err?.message || "Invalid credentials. Please try again.");

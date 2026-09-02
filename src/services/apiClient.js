@@ -67,7 +67,7 @@ export async function apiRequest(methodName, { method = "GET", params = {}, body
 
     if (contentType.includes("application/json")) {
       const data = await res.json();
-      
+
       // Update CSRF token if returned in headers/session metadata
       if (data.message?.csrf_token) {
         csrfToken = data.message.csrf_token;

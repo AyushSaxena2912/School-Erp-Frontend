@@ -255,10 +255,11 @@ function reducer(state, action) {
     }
     case "CONVERT_ENQUIRY":
     case "APPROVE_ADMISSION": {
+      const targetId = action.payload;
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === action.payload
+          e.id === targetId || e.name === targetId
             ? {
               ...e,
               status: "Admission Approved",
@@ -277,7 +278,7 @@ function reducer(state, action) {
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === id
+          e.id === id || e.name === id
             ? {
               ...e,
               status: "Form Sent",
@@ -298,7 +299,8 @@ function reducer(state, action) {
         enquiries: state.enquiries.map((e) => {
           const matchToken = e.admissionToken && e.admissionToken.toLowerCase() === qToken;
           const matchSecurity = e.security_token && e.security_token.toLowerCase() === qToken;
-          const matchId = e.id && (qToken.includes(e.id.toLowerCase().replace(/[^a-z0-9]/g, "")) || e.id.toLowerCase() === qToken);
+          const matchId = (e.id && (qToken.includes(e.id.toLowerCase().replace(/[^a-z0-9]/g, "")) || e.id.toLowerCase() === qToken)) ||
+                          (e.name && (qToken.includes(e.name.toLowerCase().replace(/[^a-z0-9]/g, "")) || e.name.toLowerCase() === qToken));
           if (!matchToken && !matchSecurity && !matchId) return e;
           const nextStatus = isFaculty
             ? e.status
@@ -327,7 +329,7 @@ function reducer(state, action) {
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === id
+          e.id === id || e.name === id
             ? {
               ...e,
               status: "Corrections Requested",
@@ -339,10 +341,11 @@ function reducer(state, action) {
       };
     }
     case "VERIFY_ADMISSION": {
+      const targetId = action.payload;
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === action.payload
+          e.id === targetId || e.name === targetId
             ? {
               ...e,
               status: "Verified",
@@ -359,7 +362,7 @@ function reducer(state, action) {
       return {
         ...state,
         enquiries: state.enquiries.map((e) =>
-          e.id === id
+          e.id === id || e.name === id
             ? {
               ...e,
               status: "Accounts Created",
@@ -658,6 +661,14 @@ const getInitialCurrentUser = () => {
   return CURRENT_USER;
 };
 
+function readCachedEnquiries() {
+  try {
+    const raw = sessionStorage.getItem("bodhya_enquiries_cache");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
 const initialState = {
   currentUser: getInitialCurrentUser(),
   staff: [],
@@ -674,7 +685,7 @@ const initialState = {
   mastersSource: "demo", // "backend" | "demo"
   schoolProfile: readSchoolProfile(),
   branches: readFromStorage("bodhya_branches", defaultBranches),
-  enquiries: [],
+  enquiries: readCachedEnquiries(),
 };
 
 export function FrontOfficeProvider({ children }) {
@@ -708,6 +719,14 @@ export function FrontOfficeProvider({ children }) {
   useEffect(() => {
     localStorage.setItem("bodhya_system_fields", JSON.stringify(state.systemFields));
   }, [state.systemFields]);
+
+  useEffect(() => {
+    try {
+      if (state.enquiries && state.enquiries.length > 0) {
+        sessionStorage.setItem("bodhya_enquiries_cache", JSON.stringify(state.enquiries));
+      }
+    } catch {}
+  }, [state.enquiries]);
 
   const refreshMasters = useCallback(async () => {
     setMastersLoading(true);
@@ -792,8 +811,8 @@ export function FrontOfficeProvider({ children }) {
         }
       }
 
-      try {
-        const enqRes = await frontOfficeService.getEnquiries();
+      // Load enquiries in background — don't block page render (page 1, limit 20 only)
+      frontOfficeService.getEnquiries({ page: 1, limit: 20 }).then((enqRes) => {
         const rawEnq = Array.isArray(enqRes)
           ? enqRes
           : (Array.isArray(enqRes?.data?.enquiries) ? enqRes.data.enquiries : (Array.isArray(enqRes?.data) ? enqRes.data : (Array.isArray(enqRes?.message?.data?.enquiries) ? enqRes.message.data.enquiries : (Array.isArray(enqRes?.message?.data) ? enqRes.message.data : (Array.isArray(enqRes?.message) ? enqRes.message : [])))));
@@ -811,10 +830,29 @@ export function FrontOfficeProvider({ children }) {
             const className = item.class_applying_for || "Class 10";
 
             const parsedCF = (() => {
+              let cf = null;
               if (typeof item.custom_fields === "string") {
-                try { return JSON.parse(item.custom_fields); } catch { return null; }
+                try { cf = JSON.parse(item.custom_fields); } catch { cf = null; }
+              } else {
+                cf = item.custom_fields || null;
               }
-              return item.custom_fields || null;
+              // Strip base64 docs/photos to avoid 22MB+ memory bloat in list view
+              if (cf && typeof cf === "object") {
+                const { docs, ...cfWithoutDocs } = cf;
+                // Also strip base64 photo fields from father/mother/guardian
+                const strip = (obj) => {
+                  if (!obj || typeof obj !== "object") return obj;
+                  const { photo, ...rest } = obj;
+                  return rest;
+                };
+                return {
+                  ...cfWithoutDocs,
+                  ...(cfWithoutDocs.father ? { father: strip(cfWithoutDocs.father) } : {}),
+                  ...(cfWithoutDocs.mother ? { mother: strip(cfWithoutDocs.mother) } : {}),
+                  ...(cfWithoutDocs.guardian ? { guardian: strip(cfWithoutDocs.guardian) } : {}),
+                };
+              }
+              return cf;
             })();
 
             const admissionFormObj = (parsedCF && (parsedCF.firstName || parsedCF.academicYear || parsedCF.section || parsedCF.house || parsedCF.father || parsedCF.mother || parsedCF.currentAddress || parsedCF.religion || parsedCF.category || parsedCF.customValues))
@@ -858,9 +896,9 @@ export function FrontOfficeProvider({ children }) {
           });
           dispatch({ type: "SET_ENQUIRIES", payload: list });
         }
-      } catch (err) {
+      }).catch((err) => {
         console.warn("Could not sync backend enquiries to React state:", err);
-      }
+      });
 
       try {
         const visRes = await frontOfficeService.getVisitors();
@@ -1188,9 +1226,16 @@ export function FrontOfficeProvider({ children }) {
         const admissionNumber = makeAdmissionNumber();
         const studentPassword = makeTempPassword();
         const parentActivationToken = makeParentActivationToken();
-        frontOfficeService.createAdmissionAccounts(id).catch((err) =>
-          console.warn("[FrontOffice API Error] Could not create admission accounts on backend:", err.message)
-        );
+        frontOfficeService
+          .updateEnquiry({
+            id,
+            enquiry_id: id,
+            status: "Accounts Created",
+            lead_temperature: "Closed",
+          })
+          .catch((err) =>
+            console.warn("[FrontOffice API Error] Could not update status to Accounts Created:", err.message)
+          );
         dispatch({
           type: "CREATE_ADMISSION_ACCOUNTS",
           payload: {

@@ -5,8 +5,7 @@ function unwrap(data) {
 }
 
 export async function fetchMasters() {
-  const { data } = await api.get("/api/method/education.api.masters.get_masters");
-  return unwrap(data) || { staff: [], classes: [], feeStructures: [], students: [] };
+  return { staff: [], classes: [], feeStructures: [], students: [] };
 }
 
 export async function fetchStaff() {

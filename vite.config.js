@@ -6,7 +6,6 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
-    strictPort: true,
     watch: {
       ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
     },
@@ -16,6 +15,11 @@ export default defineConfig({
         changeOrigin: true,
         headers: {
           Host: "education.local",
+        },
+        configure: (proxy) => {
+          proxy.on("error", (err, req, res) => {
+            console.warn("[Vite Proxy Error]", err.message);
+          });
         },
       },
     },

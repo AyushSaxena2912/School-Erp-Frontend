@@ -229,7 +229,7 @@ export default function EnquiriesPage() {
   const [search, setSearch] = useState("");
   const [filterClass, setFilterClass] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const [filterLeadType, setFilterLeadType] = useState("");
+  const [filterLeadType, setFilterLeadType] = useState(params.get("leadType") || "");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -244,6 +244,8 @@ export default function EnquiriesPage() {
     if (open) setSelectedId(open);
     const fu = params.get("followUp");
     if (fu) setFollowUpFor(fu);
+    const lt = params.get("leadType");
+    if (lt !== null && lt !== undefined) setFilterLeadType(lt);
   }, [params]);
 
   const className = (id) => {

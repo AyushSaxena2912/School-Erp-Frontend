@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Flame, Sun, Snowflake } from "lucide-react";
 import { useFrontOffice } from "../context/FrontOfficeContext";
 import { formatFollowUpTimeLabel, followUpSortKey, getFollowUpUrgency, getNextPendingFollowUp, todayISO } from "../data/seed";
 import { StatusBadge, btnPrimary, btnSecondary } from "../components/ui";
@@ -9,12 +8,12 @@ function StatCard({ label, value, hint, to, color }) {
   return (
     <Link
       to={to}
-      className="rounded-lg border border-gray-200 bg-white px-4 py-3 transition hover:border-green-700 hover:shadow-xs"
+      className="rounded-lg border border-gray-200 bg-white px-4 py-3 transition hover:border-green-700"
     >
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </p>
-      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+      <p className={`mt-1 text-2xl font-bold ${color || "text-gray-900"}`}>{value}</p>
       {hint ? <p className="mt-0.5 text-xs text-gray-500">{hint}</p> : null}
     </Link>
   );
@@ -197,135 +196,84 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Polished Lead Temperature Pipeline Card */}
+      {/* Lead Temperature & Pipeline Card - Matching ERP Portal Theme */}
       <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-gray-900">Lead Temperature & Pipeline</h3>
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-              {data.activeLeads.length} Active
-            </span>
-          </div>
-          <Link
-            to="/front-office/enquiries"
-            className="text-xs font-medium text-green-700 hover:underline"
-          >
-            View all inquiries →
-          </Link>
-        </div>
+        <SectionHeader
+          title="Lead Temperature & Pipeline"
+          to="/front-office/enquiries"
+          linkLabel="View all enquiries"
+        />
 
-        {/* 3 Lead Metric Cards */}
+        {/* 3 Native ERP Stat Cards */}
         <div className="grid gap-3 p-4 sm:grid-cols-3">
           {/* Hot Leads */}
           <div
             onClick={() => setSelectedLeadTab(selectedLeadTab === "Hot Lead" ? "all" : "Hot Lead")}
-            className={`group cursor-pointer rounded-lg border p-3.5 transition ${
+            className={`cursor-pointer rounded-lg border px-4 py-3 transition ${
               selectedLeadTab === "Hot Lead"
-                ? "border-red-500 bg-red-50/80 ring-2 ring-red-500/20"
-                : "border-red-200 bg-red-50/30 hover:border-red-400 hover:bg-red-50/50"
+                ? "border-green-700 bg-gray-50/70 ring-1 ring-green-700"
+                : "border-gray-200 bg-white hover:border-green-700"
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-red-700">
-                <Flame className="h-4 w-4 text-red-600" />
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Hot Leads
-              </span>
-              <Link
-                to="/front-office/enquiries?leadType=Hot+Lead"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[11px] font-medium text-red-600 hover:underline"
-              >
-                Filter →
-              </Link>
+              </p>
+              <StatusBadge status="Hot Lead" />
             </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-red-700">{data.hotLeads.length}</span>
-              <span className="rounded-full bg-red-100/80 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                {data.activeLeads.length > 0
-                  ? `${Math.round((data.hotLeads.length / data.activeLeads.length) * 100)}%`
-                  : "0%"}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-red-700/80">Ready to visit / decide soon</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{data.hotLeads.length}</p>
+            <p className="mt-0.5 text-xs text-gray-500">Ready to decide</p>
           </div>
 
           {/* Warm Leads */}
           <div
             onClick={() => setSelectedLeadTab(selectedLeadTab === "Warm Lead" ? "all" : "Warm Lead")}
-            className={`group cursor-pointer rounded-lg border p-3.5 transition ${
+            className={`cursor-pointer rounded-lg border px-4 py-3 transition ${
               selectedLeadTab === "Warm Lead"
-                ? "border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20"
-                : "border-amber-200 bg-amber-50/30 hover:border-amber-400 hover:bg-amber-50/50"
+                ? "border-green-700 bg-gray-50/70 ring-1 ring-green-700"
+                : "border-gray-200 bg-white hover:border-green-700"
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-800">
-                <Sun className="h-4 w-4 text-amber-600" />
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Warm Leads
-              </span>
-              <Link
-                to="/front-office/enquiries?leadType=Warm+Lead"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[11px] font-medium text-amber-700 hover:underline"
-              >
-                Filter →
-              </Link>
+              </p>
+              <StatusBadge status="Warm Lead" />
             </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-amber-800">{data.warmLeads.length}</span>
-              <span className="rounded-full bg-amber-100/80 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                {data.activeLeads.length > 0
-                  ? `${Math.round((data.warmLeads.length / data.activeLeads.length) * 100)}%`
-                  : "0%"}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-amber-800/80">Interested, evaluating options</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{data.warmLeads.length}</p>
+            <p className="mt-0.5 text-xs text-gray-500">Interested, evaluating</p>
           </div>
 
           {/* Cold Leads */}
           <div
             onClick={() => setSelectedLeadTab(selectedLeadTab === "Cold Lead" ? "all" : "Cold Lead")}
-            className={`group cursor-pointer rounded-lg border p-3.5 transition ${
+            className={`cursor-pointer rounded-lg border px-4 py-3 transition ${
               selectedLeadTab === "Cold Lead"
-                ? "border-sky-500 bg-sky-50/80 ring-2 ring-sky-500/20"
-                : "border-sky-200 bg-sky-50/30 hover:border-sky-400 hover:bg-sky-50/50"
+                ? "border-green-700 bg-gray-50/70 ring-1 ring-green-700"
+                : "border-gray-200 bg-white hover:border-green-700"
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-800">
-                <Snowflake className="h-4 w-4 text-sky-600" />
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Cold Leads
-              </span>
-              <Link
-                to="/front-office/enquiries?leadType=Cold+Lead"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[11px] font-medium text-sky-700 hover:underline"
-              >
-                Filter →
-              </Link>
+              </p>
+              <StatusBadge status="Cold Lead" />
             </div>
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-sky-800">{data.coldLeads.length}</span>
-              <span className="rounded-full bg-sky-100/80 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
-                {data.activeLeads.length > 0
-                  ? `${Math.round((data.coldLeads.length / data.activeLeads.length) * 100)}%`
-                  : "0%"}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-sky-800/80">Early enquiry / low urgency</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{data.coldLeads.length}</p>
+            <p className="mt-0.5 text-xs text-gray-500">Early enquiry / low urgency</p>
           </div>
         </div>
 
-        {/* Tab Filter Pills Bar */}
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-100 bg-gray-50/60 px-4 py-2 text-xs">
-          <span className="font-semibold text-gray-500 mr-1">Preview:</span>
+        {/* Sub-filter Tabs matching ERP design */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 bg-gray-50/50 px-4 py-2.5">
+          <span className="text-xs font-medium text-gray-500">Preview:</span>
           <button
             type="button"
             onClick={() => setSelectedLeadTab("all")}
-            className={`rounded-full px-2.5 py-1 font-medium transition ${
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
               selectedLeadTab === "all"
-                ? "bg-gray-900 text-white"
-                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+                ? "bg-green-700 text-white"
+                : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
             All Active ({data.activeLeads.length})
@@ -333,68 +281,59 @@ export default function Dashboard() {
           <button
             type="button"
             onClick={() => setSelectedLeadTab("Hot Lead")}
-            className={`flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition ${
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
               selectedLeadTab === "Hot Lead"
-                ? "bg-red-600 text-white"
-                : "bg-white text-red-700 hover:bg-red-50 border border-red-200"
+                ? "bg-green-700 text-white"
+                : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
-            <Flame className="h-3 w-3" />
             Hot ({data.hotLeads.length})
           </button>
           <button
             type="button"
             onClick={() => setSelectedLeadTab("Warm Lead")}
-            className={`flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition ${
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
               selectedLeadTab === "Warm Lead"
-                ? "bg-amber-600 text-white"
-                : "bg-white text-amber-700 hover:bg-amber-50 border border-amber-200"
+                ? "bg-green-700 text-white"
+                : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
-            <Sun className="h-3 w-3" />
             Warm ({data.warmLeads.length})
           </button>
           <button
             type="button"
             onClick={() => setSelectedLeadTab("Cold Lead")}
-            className={`flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition ${
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
               selectedLeadTab === "Cold Lead"
-                ? "bg-sky-600 text-white"
-                : "bg-white text-sky-700 hover:bg-sky-50 border border-sky-200"
+                ? "bg-green-700 text-white"
+                : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
-            <Snowflake className="h-3 w-3" />
             Cold ({data.coldLeads.length})
           </button>
         </div>
 
-        {/* Lead List Preview */}
+        {/* Lead Rows Preview */}
         {displayedLeads.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-gray-500">
+          <p className="px-4 py-8 text-center text-sm text-gray-500">
             No {selectedLeadTab === "all" ? "active" : selectedLeadTab.toLowerCase()} inquiries found.
-          </div>
+          </p>
         ) : (
           <ul className="divide-y divide-gray-100 border-t border-gray-100">
             {displayedLeads.slice(0, 5).map((e) => (
               <li
                 key={e.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition"
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-gray-900">{e.studentName}</p>
-                    {e.leadType ? (
-                      <StatusBadge status={e.leadType} />
-                    ) : (
-                      <StatusBadge status="Warm Lead" />
-                    )}
-                    <StatusBadge status={e.status} />
-                  </div>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {e.guardianName || e.parentName || "Parent"} · Class: {className(e.classId)} · {e.contact || e.parentMobile || "—"}
+                  <p className="font-medium text-gray-900">{e.studentName}</p>
+                  <p className="text-sm text-gray-500">
+                    {e.guardianName || e.parentName} · {className(e.classId)} · {e.contact}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={e.leadType || "Warm Lead"} />
+                  <StatusBadge status={e.status} />
                   <button
                     type="button"
                     className={btnSecondary}
@@ -422,14 +361,14 @@ export default function Dashboard() {
         )}
 
         {displayedLeads.length > 5 && (
-          <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-2.5 text-center">
+          <div className="border-t border-gray-100 px-4 py-3 text-center">
             <Link
               to={
                 selectedLeadTab === "all"
                   ? "/front-office/enquiries"
                   : `/front-office/enquiries?leadType=${encodeURIComponent(selectedLeadTab)}`
               }
-              className="text-xs font-semibold text-green-700 hover:underline"
+              className="text-xs font-medium text-green-700 hover:underline"
             >
               View all {displayedLeads.length} {selectedLeadTab === "all" ? "active" : selectedLeadTab} inquiries →
             </Link>

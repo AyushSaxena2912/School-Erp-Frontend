@@ -372,6 +372,7 @@ function reducer(state, action) {
               studentPassword,
               parentActivationToken,
               accountsCreatedAt: todayISO(),
+              correctionNotes: "",
             }
             : e
         ),
@@ -884,7 +885,10 @@ export function FrontOfficeProvider({ children }) {
               studentGender: item.gender || item.student_gender || "",
               section: parsedCF?.section || item.section || "",
               house: parsedCF?.house || item.house || "",
-              correctionNotes: item.enquiry_details || item.correctionNotes || "",
+              correctionNotes: item.status === "Corrections Requested" ? (item.enquiry_details || item.correctionNotes || "") : "",
+              lastCorrectionNotes: item.status !== "Corrections Requested" && (item.enquiry_details || item.lastCorrectionNotes)
+                ? (item.enquiry_details || item.lastCorrectionNotes)
+                : (item.lastCorrectionNotes || ""),
               leadType: resolveLeadType(item.status, item.lead_temperature || item.lead_type || item.leadType),
               status: item.status || "Inquiry",
               admissionToken: item.security_token || item.admissionToken || item.admission_token || "",

@@ -1013,7 +1013,7 @@ export default function EnquiriesPage() {
               })()
             ) : null}
 
-            {selected.correctionNotes ? (
+            {selected.status === "Corrections Requested" && selected.correctionNotes ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 <p className="font-medium">Corrections requested</p>
                 <p className="mt-1 whitespace-pre-wrap">

@@ -733,7 +733,7 @@ function ParentAdmissionFormInner() {
             </div>
           </div>
         </div>
-        {enquiry.correctionNotes ? (
+        {enquiry.status === "Corrections Requested" && enquiry.correctionNotes ? (
           <div className="border-t border-amber-100 bg-amber-50 px-5 py-3 text-sm text-amber-900 sm:px-7">
             <p className="font-medium">School requested corrections</p>
             <p className="mt-1 whitespace-pre-wrap">{enquiry.correctionNotes}</p>

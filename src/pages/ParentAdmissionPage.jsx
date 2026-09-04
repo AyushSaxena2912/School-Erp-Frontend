@@ -653,6 +653,24 @@ function ParentAdmissionFormInner() {
     if (!form.father.name.trim() && !form.mother.name.trim()) {
       next.parents = "Enter Father or Mother details";
     }
+    if (!form.bank?.bankName?.trim()) {
+      next.bankName = "Bank Name is required";
+    }
+    if (!form.bank?.branch?.trim()) {
+      next.bankBranch = "Branch is required";
+    }
+    if (!form.bank?.ifsc?.trim()) {
+      next.bankIfsc = "IFSC Number is required";
+    }
+    if (!form.bank?.other?.trim()) {
+      next.bankOther = "Other Information is required";
+    }
+    if (!form.bank?.accountNumber?.trim()) {
+      next.bankAccountNumber = "Account Number is required";
+    }
+    if (!form.bank?.accountHolder?.trim()) {
+      next.bankAccountHolder = "Account Holder Name is required";
+    }
     setErrors(next);
     if (Object.keys(next).length) {
       return;
@@ -673,6 +691,29 @@ function ParentAdmissionFormInner() {
 
   const saveFacultyChanges = (e) => {
     if (e) e.preventDefault();
+    const next = {};
+    if (!form.bank?.bankName?.trim()) {
+      next.bankName = "Bank Name is required";
+    }
+    if (!form.bank?.branch?.trim()) {
+      next.bankBranch = "Branch is required";
+    }
+    if (!form.bank?.ifsc?.trim()) {
+      next.bankIfsc = "IFSC Number is required";
+    }
+    if (!form.bank?.other?.trim()) {
+      next.bankOther = "Other Information is required";
+    }
+    if (!form.bank?.accountNumber?.trim()) {
+      next.bankAccountNumber = "Account Number is required";
+    }
+    if (!form.bank?.accountHolder?.trim()) {
+      next.bankAccountHolder = "Account Holder Name is required";
+    }
+    if (Object.keys(next).length) {
+      setErrors(next);
+      return;
+    }
     submitParentAdmissionForm(
       token,
       {
@@ -1707,60 +1748,82 @@ function ParentAdmissionFormInner() {
             }
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Field label="Bank Name">
+              <Field label="Bank Name" required error={errors.bankName}>
                 <input
                   className={inputClass}
                   value={form.bank.bankName}
-                  onChange={(e) =>
-                    setNested("bank", { bankName: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setNested("bank", { bankName: e.target.value });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankName: "" }));
+                    }
+                  }}
                 />
               </Field>
-              <Field label="Branch">
+              <Field label="Branch" required error={errors.bankBranch}>
                 <input
                   className={inputClass}
                   value={form.bank.branch}
-                  onChange={(e) => setNested("bank", { branch: e.target.value })}
+                  onChange={(e) => {
+                    setNested("bank", { branch: e.target.value });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankBranch: "" }));
+                    }
+                  }}
                 />
               </Field>
-              <Field label="IFSC Number">
+              <Field label="IFSC Number" required error={errors.bankIfsc}>
                 <input
                   className={inputClass}
                   value={form.bank.ifsc}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setNested("bank", {
                       ifsc: e.target.value.toUpperCase().slice(0, 11),
-                    })
-                  }
+                    });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankIfsc: "" }));
+                    }
+                  }}
                 />
               </Field>
-              <Field label="Other Information">
+              <Field label="Other Information" required error={errors.bankOther}>
                 <input
                   className={inputClass}
                   value={form.bank.other}
-                  onChange={(e) => setNested("bank", { other: e.target.value })}
+                  onChange={(e) => {
+                    setNested("bank", { other: e.target.value });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankOther: "" }));
+                    }
+                  }}
                 />
               </Field>
-              <Field label="Account Number">
+              <Field label="Account Number" required error={errors.bankAccountNumber}>
                 <input
                   className={inputClass}
                   placeholder="Enter bank account number"
                   value={form.bank.accountNumber}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setNested("bank", {
                       accountNumber: e.target.value.replace(/\D/g, ""),
-                    })
-                  }
+                    });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankAccountNumber: "" }));
+                    }
+                  }}
                 />
               </Field>
-              <Field label="Account Holder Name">
+              <Field label="Account Holder Name" required error={errors.bankAccountHolder}>
                 <input
                   className={inputClass}
                   placeholder="As per bank records"
                   value={form.bank.accountHolder}
-                  onChange={(e) =>
-                    setNested("bank", { accountHolder: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setNested("bank", { accountHolder: e.target.value });
+                    if (e.target.value.trim()) {
+                      setErrors((p) => ({ ...p, bankAccountHolder: "" }));
+                    }
+                  }}
                 />
               </Field>
             </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useFrontOffice } from "../front-office/context/FrontOfficeContext";
+import { useAdmissionForm, useSubmitAdmissionForm } from "@/lib/api/queries";
 import {
   Field,
   PhoneInput,
@@ -485,20 +485,150 @@ function formFromEnquiry(enquiry, classes = []) {
   };
 }
 
+/**
+ * Resolves the link token, then renders the form.
+ *
+ * The form below seeds its state from the fetched enquiry with lazy `useState`
+ * initialisers, which run once at mount. Fetching in the same component would
+ * mount it with nothing and leave every field blank, so the fetch lives here
+ * and the form only mounts once the data is in hand.
+ */
 function ParentAdmissionFormInner() {
   const { token } = useParams();
+  // This page is UNAUTHENTICATED: the link token is the entire authorisation.
+  // It must never read from an authenticated query.
+  const { data: admissionForm, isLoading, isError, error } = useAdmissionForm(token);
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-lg rounded-lg border border-gray-200 bg-white p-8 text-sm text-gray-500">
+        Loading admission form…
+      </div>
+    );
+  }
+
+  // Only a failure with nothing to show is a dead link. Once the form has
+  // loaded it stays up: the token is burned on submit, so a later refetch
+  // failing is the expected end of a *successful* submission, not an error the
+  // parent should see.
+  if (isError && !admissionForm) {
+    return (
+      <div className="mx-auto max-w-lg rounded-lg border border-gray-200 bg-white p-8">
+        <h1 className="text-xl font-bold text-gray-900">Link invalid</h1>
+        <p className="mt-2 text-sm text-gray-500">
+          {error?.message ||
+            "This admission form link is invalid or has expired."}
+        </p>
+      </div>
+    );
+  }
+
+  return <ParentAdmissionFormBody admissionForm={admissionForm} />;
+}
+
+function ParentAdmissionFormBody({ admissionForm }) {
   const navigate = useNavigate();
+  const { token } = useParams();
   const [searchParams] = useSearchParams();
   const preview = searchParams.get("preview") === "1";
-  const {
-    enquiries,
-    classes,
-    students,
-    customFields,
-    submitParentAdmissionForm,
-    requestAdmissionCorrections,
-    verifyAdmission,
-  } = useFrontOffice();
+  const submitForm = useSubmitAdmissionForm();
+
+  // The class list is not fetched here — a guest has no permission to list
+  // masters, and the enquiry already carries the class it applied for.
+  const classes = useMemo(
+    () =>
+      admissionForm?.class_applying_for
+        ? [{ id: admissionForm.class_applying_for, name: admissionForm.class_applying_for }]
+        : [],
+    [admissionForm],
+  );
+  const students = useMemo(() => [], []);
+  const customFields = useMemo(
+    () =>
+      (admissionForm?.custom_fields ?? []).map((f) => ({
+        id: f.field_key,
+        key: f.field_key,
+        label: f.label,
+        type: f.fieldtype,
+        options: f.options,
+        required: f.is_mandatory,
+      })),
+    [admissionForm],
+  );
+
+  /**
+   * Send the completed application.
+   *
+   * Every section of this form now has a typed home on Student Applicant. The
+   * old backend serialised the whole request body — the security token included
+   * — into an unqueryable JSON blob; these are real fields,
+   * so bank details, parents, siblings and medical info are all reportable.
+   */
+  const submitParentAdmissionForm = (tok, values) =>
+    submitForm.mutateAsync({
+      token: tok,
+      payload: {
+        // Fields that live on the enquiry itself.
+        student_first_name: values.firstName || undefined,
+        student_middle_name: values.middleName || undefined,
+        student_last_name: values.lastName || undefined,
+        gender: values.gender || undefined,
+        student_mobile: values.primaryContact || undefined,
+        guardian_mobile: values.father?.phone || values.mother?.phone || undefined,
+        guardian_email: values.email || undefined,
+
+        // The application record.
+        email_address: values.email || undefined,
+        date_of_birth: values.dateOfBirth || undefined,
+        blood_group: values.bloodGroup || undefined,
+        religion: values.religion || undefined,
+        category: values.category || undefined,
+        mother_tongue: values.motherTongue || undefined,
+        languages_known: (values.languages || []).join(", ") || undefined,
+        aadhaar_number: values.aadharNo || undefined,
+
+        father_name: values.father?.name || undefined,
+        father_email: values.father?.email || undefined,
+        father_mobile: values.father?.phone || undefined,
+        father_occupation: values.father?.occupation || undefined,
+        mother_name: values.mother?.name || undefined,
+        mother_email: values.mother?.email || undefined,
+        mother_mobile: values.mother?.phone || undefined,
+        mother_occupation: values.mother?.occupation || undefined,
+
+        current_address: values.currentAddress || undefined,
+        permanent_address: values.permanentAddress || undefined,
+
+        medical_condition: values.medicalCondition || undefined,
+        allergies: (values.allergies || []).join(", ") || undefined,
+        medications: (values.medications || []).join(", ") || undefined,
+
+        previous_school_name: values.previousSchoolName || undefined,
+        previous_school_address: values.previousSchoolAddress || undefined,
+
+        bank_name: values.bank?.bankName || undefined,
+        bank_branch: values.bank?.branch || undefined,
+        bank_ifsc: values.bank?.ifsc || undefined,
+        bank_account_number: values.bank?.accountNumber || undefined,
+        bank_account_holder: values.bank?.accountHolder || undefined,
+        bank_other_information: values.bank?.other || undefined,
+
+        siblings: (values.siblings || [])
+          .filter((sib) => sib?.name?.trim())
+          .map((sib) => ({
+            sibling_name: sib.name,
+            grade: sib.className || sib.grade,
+            school_name: sib.school || sib.schoolName,
+          })),
+
+        custom_values: values.customValues || undefined,
+      },
+    });
+
+  // Staff-only pipeline actions are not available on the guest page; they live
+  // on the Enquiries screen, behind a session.
+  const requestAdmissionCorrections = () => {};
+  const verifyAdmission = () => {};
 
   const handleCustomChange = (fieldLabel, val) => {
     setForm((p) => ({
@@ -518,19 +648,33 @@ function ParentAdmissionFormInner() {
     );
     return found?.name || idOrName || "Class 10";
   };
+  /**
+   * The server resolves the token and returns exactly one enquiry, or 403.
+   *
+   * This used to fuzzy-match the token against a client-side list — partial
+   * substring comparisons, falling back to `enquiries[0]` — which mirrored the
+   * same fallback-matching hole that was removed server-side.
+   */
   const enquiry = useMemo(() => {
-    if (!token) return enquiries?.[0] || null;
-    const cleanTok = String(token).toLowerCase().replace(/[^a-z0-9]/g, "");
-    const found = (enquiries || []).find((e) => {
-      const matchId = e.id && String(e.id).toLowerCase().replace(/[^a-z0-9]/g, "") === cleanTok;
-      const matchName = e.name && String(e.name).toLowerCase().replace(/[^a-z0-9]/g, "") === cleanTok;
-      const matchToken = e.admissionToken && String(e.admissionToken).toLowerCase().replace(/[^a-z0-9]/g, "") === cleanTok;
-      const partialToken = e.admissionToken && String(e.admissionToken).toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanTok);
-      const partialId = e.id && cleanTok.includes(String(e.id).toLowerCase().replace(/[^a-z0-9]/g, ""));
-      return matchId || matchName || matchToken || partialToken || partialId;
-    });
-    return found || enquiries?.[0] || null;
-  }, [enquiries, token]);
+    if (!admissionForm) return null;
+    return {
+      id: admissionForm.name,
+      name: admissionForm.name,
+      studentFirstName: admissionForm.student_first_name,
+      studentMiddleName: admissionForm.student_middle_name,
+      studentLastName: admissionForm.student_last_name,
+      gender: admissionForm.gender,
+      studentMobile: admissionForm.student_mobile,
+      className: admissionForm.class_applying_for,
+      classId: admissionForm.class_applying_for,
+      guardianFirstName: admissionForm.guardian_first_name,
+      guardianLastName: admissionForm.guardian_last_name,
+      parentMobile: admissionForm.guardian_mobile,
+      parentEmail: admissionForm.guardian_email,
+      status: admissionForm.status,
+      customValues: admissionForm.custom_values || {},
+    };
+  }, [admissionForm]);
   const [form, setForm] = useState(() => formFromEnquiry(enquiry, classes));
   const [errors, setErrors] = useState({});
   const [done, setDone] = useState(
@@ -562,6 +706,9 @@ function ParentAdmissionFormInner() {
   const [correctionDraft, setCorrectionDraft] = useState("");
   const [showFacultyCorrections, setShowFacultyCorrections] = useState(false);
   const [facultySavedNotice, setFacultySavedNotice] = useState(false);
+  // A rejected submission must be visible on the page: this form is public and
+  // the parent has no console to look at.
+  const [submitError, setSubmitError] = useState("");
 
   const isSchoolFieldDisabled = !preview;
 
@@ -638,7 +785,7 @@ function ParentAdmissionFormInner() {
     );
   }
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     const next = {};
     if (!form.dateOfBirth) next.dateOfBirth = "Date of Birth is required";
@@ -673,20 +820,30 @@ function ParentAdmissionFormInner() {
       return;
     }
 
-    submitParentAdmissionForm(token, {
-      ...form,
-      address: form.currentAddress.trim(),
-      documents: [
-        form.docs.medical,
-        form.docs.transferCertificate,
-        form.docs.aadhar,
-      ].filter(Boolean),
-      submittedAt: new Date().toISOString(),
-    });
-    setDone(true);
+    // Only show the success screen once the server has actually accepted the
+    // application. Marking it done regardless would tell a parent their form
+    // was submitted when it was not.
+    setSubmitError("");
+    try {
+      await submitParentAdmissionForm(token, {
+        ...form,
+        address: form.currentAddress.trim(),
+        documents: [
+          form.docs.medical,
+          form.docs.transferCertificate,
+          form.docs.aadhar,
+        ].filter(Boolean),
+        submittedAt: new Date().toISOString(),
+      });
+      setDone(true);
+    } catch (err) {
+      setSubmitError(
+        err?.message || "Could not submit the form. Please try again.",
+      );
+    }
   };
 
-  const saveFacultyChanges = (e) => {
+  const saveFacultyChanges = async (e) => {
     if (e) e.preventDefault();
     const next = {};
     if (!form.bank?.bankName?.trim()) {
@@ -708,26 +865,37 @@ function ParentAdmissionFormInner() {
       setErrors(next);
       return;
     }
-    submitParentAdmissionForm(
-      token,
-      {
-        ...form,
-        address: form.currentAddress.trim(),
-        documents: [
-          form.docs.medical,
-          form.docs.transferCertificate,
-          form.docs.aadhar,
-        ].filter(Boolean),
-        submittedAt: enquiry?.formSubmittedAt || new Date().toISOString(),
-      },
-      true
-    );
-    setFacultySavedNotice(true);
-    setTimeout(() => setFacultySavedNotice(false), 3000);
+    setSubmitError("");
+    try {
+      await submitParentAdmissionForm(
+        token,
+        {
+          ...form,
+          address: form.currentAddress.trim(),
+          documents: [
+            form.docs.medical,
+            form.docs.transferCertificate,
+            form.docs.aadhar,
+          ].filter(Boolean),
+          submittedAt: enquiry?.formSubmittedAt || new Date().toISOString(),
+        },
+        true
+      );
+      setFacultySavedNotice(true);
+      setTimeout(() => setFacultySavedNotice(false), 3000);
+    } catch (err) {
+      setSubmitError(err?.message || "Could not save the changes.");
+    }
   };
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
+      {submitError ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </p>
+      ) : null}
+
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="border-b-4 border-green-700 bg-gradient-to-br from-green-50 via-white to-white px-5 py-6 sm:px-7 sm:py-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1930,7 +2098,7 @@ function ParentAdmissionFormInner() {
   );
 }
 
-/** Public parent form — shares app FrontOfficeProvider (in-memory demo state). */
+/** Public parent form — unauthenticated, resolved entirely from the link token. */
 export default function ParentAdmissionPage() {
   return (
     <div className="min-h-screen bg-gray-100 px-4 py-8">

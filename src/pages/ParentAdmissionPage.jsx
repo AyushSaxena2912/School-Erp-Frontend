@@ -662,9 +662,6 @@ function ParentAdmissionFormInner() {
     if (!form.bank?.ifsc?.trim()) {
       next.bankIfsc = "IFSC Number is required";
     }
-    if (!form.bank?.other?.trim()) {
-      next.bankOther = "Other Information is required";
-    }
     if (!form.bank?.accountNumber?.trim()) {
       next.bankAccountNumber = "Account Number is required";
     }
@@ -700,9 +697,6 @@ function ParentAdmissionFormInner() {
     }
     if (!form.bank?.ifsc?.trim()) {
       next.bankIfsc = "IFSC Number is required";
-    }
-    if (!form.bank?.other?.trim()) {
-      next.bankOther = "Other Information is required";
     }
     if (!form.bank?.accountNumber?.trim()) {
       next.bankAccountNumber = "Account Number is required";
@@ -1786,15 +1780,12 @@ function ParentAdmissionFormInner() {
                   }}
                 />
               </Field>
-              <Field label="Other Information" required error={errors.bankOther}>
+              <Field label="Other Information">
                 <input
                   className={inputClass}
                   value={form.bank.other}
                   onChange={(e) => {
                     setNested("bank", { other: e.target.value });
-                    if (e.target.value.trim()) {
-                      setErrors((p) => ({ ...p, bankOther: "" }));
-                    }
                   }}
                 />
               </Field>

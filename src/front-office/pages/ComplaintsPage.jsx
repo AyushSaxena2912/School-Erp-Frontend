@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import {
+  useComplaints,
+  useDeleteComplaints,
+  useRegisterComplaint,
+  useUpdateComplaint,
+} from "@/lib/api/queries";
+import { fromComplaintView, toComplaintView } from "@/lib/api/adapters";
 import {
   COMPLAINT_NATURES,
   COMPLAINT_STATUSES,
@@ -161,8 +167,48 @@ function ComplaintDetail({ complaint, onClose, onSave, onEdit, onDelete }) {
 export default function ComplaintsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { complaints, addComplaint, updateComplaint, deleteComplaint, deleteComplaints } =
-    useFrontOffice();
+  const {
+    data: complaintPage,
+    isLoading,
+    isError,
+    error,
+  } = useComplaints({
+    fields: [
+      "name",
+      "complainant_name",
+      "relation_to_student",
+      "student",
+      "mobile_number",
+      "nature_of_complaint",
+      "source",
+      "date",
+      "status",
+      "brief_discussion",
+      "resolution_notes",
+      "assigned_to",
+      "creation",
+      // Pull the linked Student's name and class in the same query.
+      "student.student_name as student_name",
+      "student.grade as student_grade",
+    ],
+    orderBy: "creation desc",
+    limitPageLength: 0,
+  });
+
+  const register = useRegisterComplaint();
+  const update = useUpdateComplaint();
+  const removeComplaints = useDeleteComplaints();
+
+  const complaints = useMemo(
+    () => (complaintPage?.items ?? []).map(toComplaintView),
+    [complaintPage],
+  );
+
+  const addComplaint = (view) => register.mutate(fromComplaintView(view));
+  const updateComplaint = (view) =>
+    update.mutate({ name: view.id, payload: fromComplaintView(view) });
+  const deleteComplaint = (id) => removeComplaints.mutate([id]);
+  const deleteComplaints = (ids) => removeComplaints.mutate(ids);
   const selectedId = params.get("open");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterNature, setFilterNature] = useState("");
@@ -383,6 +429,20 @@ export default function ComplaintsPage() {
     setSelectedIds((prev) => prev.filter((id) => id !== confirmDeleteId));
     setConfirmDeleteId(null);
   };
+
+  if (isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading complaints…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error?.message || "Could not load the complaint register."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

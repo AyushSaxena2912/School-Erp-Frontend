@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Building2, Camera, MoreVertical, Pencil, Trash2, Upload } from "lucide-react";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import {
+  useBranches,
+  useDeleteBranch,
+  useSchoolProfile,
+  useUpdateBranch,
+  useUpdateSchoolProfile,
+} from "@/lib/api/queries";
 import {
   Field,
   StatusBadge,
@@ -88,13 +94,65 @@ export default function BranchesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const profileFileRef = useRef(null);
-  const {
-    schoolProfile,
-    branches,
-    updateSchoolProfile,
-    updateBranch,
-    deleteBranch,
-  } = useFrontOffice();
+  const { data: branchRecords } = useBranches();
+  const { data: profile } = useSchoolProfile();
+  const updateBranchMutation = useUpdateBranch();
+  const removeBranch = useDeleteBranch();
+  const updateProfile = useUpdateSchoolProfile();
+
+  const branches = useMemo(
+    () =>
+      (branchRecords ?? []).map((b) => ({
+        id: b.name,
+        name: b.branch_name,
+        code: b.branch_code || "",
+        principalName: b.principal_name || "",
+        email: b.email || "",
+        phone: b.contact_number || "",
+        address: b.address_line || "",
+        status: b.is_active ? "Active" : "Inactive",
+        logo: "",
+      })),
+    [branchRecords],
+  );
+
+  const schoolProfile = useMemo(
+    () => ({
+      name: profile?.school_name || "",
+      affiliationNumber: profile?.affiliation_number || "",
+      email: profile?.email || "",
+      phone: profile?.contact_number || "",
+      website: profile?.website || "",
+      address: profile?.address_line || "",
+      city: profile?.city || "",
+      state: profile?.state || "",
+      logo: "",
+    }),
+    [profile],
+  );
+
+  const updateSchoolProfile = (values) =>
+    updateProfile.mutate({
+      school_name: values.name,
+      affiliation_number: values.affiliationNumber,
+      email: values.email,
+      contact_number: values.phone,
+      website: values.website,
+      address_line: values.address,
+      city: values.city,
+      state: values.state,
+    });
+
+  const updateBranch = ({ id, ...form }) =>
+    updateBranchMutation.mutate({
+      name: id,
+      values: {
+        ...(form.name !== undefined ? { branch_name: form.name } : {}),
+        ...(form.status !== undefined ? { is_active: form.status === "Active" ? 1 : 0 } : {}),
+      },
+    });
+
+  const deleteBranch = (id) => removeBranch.mutate(id);
 
   const activeTab = searchParams.get("tab") === "profile" ? "profile" : "branches";
 

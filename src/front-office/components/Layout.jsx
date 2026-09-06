@@ -1,31 +1,59 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { Calendar, ChevronDown, KeyRound, LogOut, User, ShieldCheck } from "lucide-react";
-import { formatFollowUpTimeLabel, getFollowUpUrgency, getNextPendingFollowUp } from "../data/seed";
-import { useFrontOffice } from "../context/FrontOfficeContext";
-import { authService } from "../../services/authService";
+import { formatFollowUpTimeLabel } from "../data/seed";
+import { useDashboard } from "@/lib/api/queries";
+import { useSession } from "@/lib/auth/useSession";
 import Sidebar from "./sidebar/Sidebar";
 import ChangePasswordModal from "./ChangePasswordModal";
 
-function useDueFollowUps(enquiries, currentUser) {
-  return useMemo(() => {
-    return enquiries.filter((e) => {
-      if (e.converted || e.status === "Admitted" || e.status === "Lost")
-        return false;
-      const nextFu = getNextPendingFollowUp(e);
-      if (!nextFu) return false;
-      const urgency = getFollowUpUrgency(nextFu);
-      if (urgency !== "Today" && urgency !== "Overdue") return false;
-      const mine =
-        e.assignedTo === currentUser.id ||
-        String(currentUser.role || "").toLowerCase().includes("admin");
-      return mine;
-    });
-  }, [enquiries, currentUser]);
-}
+const joinName = (...parts) => parts.filter(Boolean).join(" ").trim();
 
 export default function FrontOfficeLayout() {
-  const { currentUser, enquiries, visitors } = useFrontOffice();
+  // The header needs the alert counts and the search corpus, both of which the
+  // dashboard aggregate already provides — no need for separate list queries.
+  const { data: summary } = useDashboard();
+  const { session } = useSession();
+  const currentUser = { name: session?.full_name || session?.user || "", email: session?.email || "" };
+  // Due follow-ups are computed server-side ("Not Called Yet" and due on or
+  // before today), so the header no longer re-derives urgency from a full
+  // enquiry list.
+  const due = useMemo(
+    () =>
+      (summary?.calls_due ?? []).map((row) => ({
+        id: row.enquiry,
+        studentName: row.student_name,
+        overdue: row.is_overdue,
+        next: {
+          dateToCall: row.date_to_call,
+          timeType: row.time_preference,
+          notes: row.notes,
+        },
+      })),
+    [summary],
+  );
+  const overdueCount = summary?.counters?.calls_overdue ?? 0;
+  const enquiries = useMemo(
+    () =>
+      (summary?.active_leads ?? []).map((row) => ({
+        id: row.name,
+        studentName: joinName(row.student_first_name, row.student_last_name),
+        parentName: joinName(row.guardian_first_name, row.guardian_last_name),
+        contact: row.guardian_mobile ?? "",
+      })),
+    [summary],
+  );
+  const visitors = useMemo(
+    () =>
+      (summary?.visitors_inside ?? []).map((row) => ({
+        id: row.name,
+        name: row.visitor_name ?? "",
+        purpose: row.purpose_of_visit ?? "",
+        contact: row.contact_number ?? "",
+      })),
+    [summary],
+  );
+  const { logout } = useSession();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -44,12 +72,6 @@ export default function FrontOfficeLayout() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-  const due = useDueFollowUps(enquiries, currentUser);
-  const overdueCount = due.filter((e) => {
-    const nextFu = getNextPendingFollowUp(e);
-    return nextFu && getFollowUpUrgency(nextFu) === "Overdue";
-  }).length;
-
   const globalResults = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (q.length < 2) return { enquiries: [], visitors: [] };
@@ -224,9 +246,8 @@ export default function FrontOfficeLayout() {
                   ) : (
                     <ul className="max-h-72 overflow-y-auto">
                       {due.map((e) => {
-                        const nextFu = getNextPendingFollowUp(e);
-                        const overdue =
-                          nextFu && getFollowUpUrgency(nextFu) === "Overdue";
+                        const nextFu = e.next;
+                        const overdue = e.overdue;
                         return (
                           <li key={e.id}>
                             <button
@@ -323,18 +344,11 @@ export default function FrontOfficeLayout() {
                       type="button"
                       onClick={async () => {
                         setShowUserMenu(false);
-                        localStorage.removeItem("bodhya_user_name");
-                        localStorage.removeItem("bodhya_user_email");
-                        localStorage.removeItem("bodhya_user_role");
-                        localStorage.removeItem("bodhya_logged_in");
-                        localStorage.removeItem("frappe_sid");
-                        localStorage.removeItem("frappe_csrf_token");
-                        try {
-                          await authService.logout();
-                        } catch {
-                          // ignore
-                        }
-                        window.location.href = "/login";
+                        // logout() clears the session, the CSRF token and the
+                        // query cache. Nothing identity-related lives in
+                        // localStorage any more.
+                        await logout();
+                        navigate("/login", { replace: true });
                       }}
                       className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
                     >

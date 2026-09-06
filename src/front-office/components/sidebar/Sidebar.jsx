@@ -9,7 +9,7 @@ import {
   SIDEBAR_GROUPS,
   SIDEBAR_STATE_KEY,
 } from "../../nav/sidebarConfig";
-import { useFrontOffice } from "../../context/FrontOfficeContext";
+import { useBranches } from "@/lib/api/queries";
 import NavGroup from "./NavGroup";
 import NavIcon from "./NavIcon";
 
@@ -125,7 +125,11 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [role, setRole] = useState(readRole);
   const [branch, setBranch] = useState(readBranch);
-  const { branches } = useFrontOffice();
+  const { data: branchRecords } = useBranches();
+  const branches = useMemo(
+    () => (branchRecords ?? []).map((b) => ({ id: b.name, name: b.branch_name || b.name })),
+    [branchRecords],
+  );
 
   useEffect(() => {
     setRole(readRole());

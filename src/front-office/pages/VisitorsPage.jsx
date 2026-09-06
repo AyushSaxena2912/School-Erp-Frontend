@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import {
+  useAssignableStaff,
+  useStudents,
+  useCheckInVisitor,
+  useCheckOutVisitor,
+  useDeleteVisitors,
+  useUpdateVisitor,
+  useVisitors,
+} from "@/lib/api/queries";
+import { fromVisitorView, toStudentOption, toVisitorView } from "@/lib/api/adapters";
 import { VISITOR_PURPOSES, VISITOR_RELATIONS, todayISO, formatStudentLabel, smartSearchMatch, formatDateTimeDMY } from "../data/seed";
 import {
   EmptyState,
@@ -245,16 +254,59 @@ function VisitorDetail({ visitor, onClose, onCheckOut, onEdit, onDelete }) {
 }
 
 export default function VisitorsPage() {
+  // Server state comes from TanStack Query; the local filter/pagination state
+  // below stays as-is, since it is UI concern rather than data.
   const {
-    visitors,
-    staff,
-    students,
-    addVisitor,
-    updateVisitor,
-    deleteVisitor,
-    deleteVisitors,
-    checkOutVisitor,
-  } = useFrontOffice();
+    data: visitorPage,
+    isLoading,
+    isError,
+    error,
+  } = useVisitors({
+    fields: [
+      "name",
+      "visitor_name",
+      "contact_number",
+      "purpose_of_visit",
+      "relation_to_student",
+      "student",
+      "whom_to_meet",
+      "check_in_time",
+      "check_out_time",
+      "remarks",
+      // Pull the linked Student's name and class in the same query.
+      "student.student_name as student_name",
+      "student.grade as student_grade",
+    ],
+    orderBy: "check_in_time desc",
+    limitPageLength: 0,
+  });
+  const { data: staffList } = useAssignableStaff();
+
+  const checkIn = useCheckInVisitor();
+  const update = useUpdateVisitor();
+  const removeVisitors = useDeleteVisitors();
+  const checkOut = useCheckOutVisitor();
+
+  const visitors = useMemo(
+    () => (visitorPage?.items ?? []).map(toVisitorView),
+    [visitorPage],
+  );
+  const staff = useMemo(
+    () => (staffList ?? []).map((u) => ({ id: u.name, name: u.full_name || u.name })),
+    [staffList],
+  );
+  const { data: studentRecords } = useStudents();
+  const students = useMemo(
+    () => (studentRecords ?? []).map(toStudentOption),
+    [studentRecords],
+  );
+
+  const addVisitor = (view) => checkIn.mutate(fromVisitorView(view));
+  const updateVisitor = (view) =>
+    update.mutate({ name: view.id, payload: fromVisitorView(view) });
+  const deleteVisitor = (id) => removeVisitors.mutate([id]);
+  const deleteVisitors = (ids) => removeVisitors.mutate(ids);
+  const checkOutVisitor = (id) => checkOut.mutate(id);
   const [rangePreset, setRangePreset] = useState("all");
   const [customFrom, setCustomFrom] = useState(todayISO());
   const [customTo, setCustomTo] = useState(todayISO());
@@ -303,9 +355,14 @@ export default function VisitorsPage() {
     return [...new Set([...fromStaff, ...fromVisitors])];
   }, [visitors, staff]);
 
+  // Opened by focus, not only by typing — an empty box should still show what
+  // is available (or that nothing is).
+  const [studentOpen, setStudentOpen] = useState(false);
+
   const studentMatches = useMemo(() => {
+    if (form.studentId) return [];
     const q = studentQuery.trim().toLowerCase();
-    if (q.length < 1 || form.studentId) return [];
+    if (!q) return students.slice(0, 6);
     return students
       .filter(
         (s) =>
@@ -570,14 +627,25 @@ export default function VisitorsPage() {
         currentStudentName = match.name;
         currentStudent = match;
       } else {
+        // No match: keep the typed name for the form's own validation, but do
+        // not invent an id. `student` is a Link to Student and a made-up value
+        // is rejected as a broken link.
         currentStudentName = studentQuery.trim();
-        if (!currentStudentId) currentStudentId = `student-${currentStudentName}`;
+        currentStudentId = "";
       }
     }
 
     const next = {};
     if (!form.name.trim()) next.name = "Required";
     if (!form.purpose) next.purpose = "Required";
+    // The contact number is optional — a walk-in may not leave one. If one *is*
+    // given it must be storable, and the server normalises to E.164 (8–15 digits
+    // once a country code is present), so mirror that rule rather than letting
+    // the save fail with a 417.
+    const contactDigits = String(form.contact || "").replace(/\D/g, "");
+    if (contactDigits && (contactDigits.length < 8 || contactDigits.length > 15)) {
+      next.contact = "Enter a valid phone number";
+    }
     if (needsStudent && !currentStudentId && !currentStudentName) {
       next.student = "Please select or enter student name";
     }
@@ -627,6 +695,20 @@ export default function VisitorsPage() {
     if (!value) return "—";
     return formatDateTimeDMY(value);
   };
+
+  if (isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading visitor log…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error?.message || "Could not load the visitor log."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -824,7 +906,7 @@ export default function VisitorsPage() {
                             className="text-sm font-medium text-green-700 hover:underline"
                             onClick={(e) => {
                               e.stopPropagation();
-                              checkOutVisitor(v.id, nowLocal());
+                              checkOutVisitor(v.id);
                             }}
                           >
                             Check Out
@@ -860,7 +942,7 @@ export default function VisitorsPage() {
             />
           </Field>
 
-          <Field label="Contact Number">
+          <Field label="Contact Number" error={errors.contact}>
             <PhoneInput
               value={form.contact}
               onChange={(val) => set("contact", val)}
@@ -920,19 +1002,27 @@ export default function VisitorsPage() {
                     </button>
                   </div>
                 ) : (
-                  <>
+                  <div className="relative">
                     <input
                       className={inputClass}
                       value={studentQuery}
                       onChange={(e) => setStudentQuery(e.target.value)}
+                      onFocus={() => setStudentOpen(true)}
+                      onBlur={() => setStudentOpen(false)}
                       placeholder={
                         needsStudent
                           ? "Search name or scholar number"
                           : "Optional — search if about a student"
                       }
                     />
-                    {studentMatches.length > 0 ? (
-                      <ul className="mt-1 overflow-hidden rounded-md border border-gray-200 bg-white">
+                    {!studentOpen ? null : studentMatches.length > 0 ? (
+                      <ul
+                        // Keep focus on the input: a blur here would unmount the
+                        // list before the click landed, so options selected only
+                        // when mouseup beat the close.
+                        onMouseDown={(e) => e.preventDefault()}
+                        className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg"
+                      >
                         {studentMatches.map((s) => (
                           <li key={s.id}>
                             <button
@@ -945,8 +1035,14 @@ export default function VisitorsPage() {
                           </li>
                         ))}
                       </ul>
-                    ) : null}
-                  </>
+                    ) : (
+                      <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                        <li className="px-3 py-2 text-sm text-gray-500">
+                          No students
+                        </li>
+                      </ul>
+                    )}
+                  </div>
                 )}
               </Field>
             </>
@@ -1030,9 +1126,7 @@ export default function VisitorsPage() {
             onClose={() => setSelectedId(null)}
             onEdit={() => openEdit(selected)}
             onDelete={(id) => setConfirmDeleteId(id)}
-            onCheckOut={(id, time) => {
-              checkOutVisitor(id, time);
-            }}
+            onCheckOut={(id) => checkOutVisitor(id)}
           />
         ) : null}
       </SlideOver>

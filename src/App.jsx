@@ -7,12 +7,10 @@ import ChangePassword from "./pages/auth/ChangePassword";
 import FrontOfficeApp from "./front-office/FrontOfficeApp";
 import ParentAdmissionPage from "./pages/ParentAdmissionPage";
 import TeacherRecruitmentPage from "./pages/TeacherRecruitmentPage";
-import { FrontOfficeProvider } from "./front-office/context/FrontOfficeContext";
 import { TeachersProvider } from "./front-office/teachers/context/TeachersContext";
 
 function App() {
   return (
-    <FrontOfficeProvider>
       <TeachersProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
@@ -26,7 +24,6 @@ function App() {
           <Route path="/front-office/*" element={<FrontOfficeApp />} />
         </Routes>
       </TeachersProvider>
-    </FrontOfficeProvider>
   );
 }
 

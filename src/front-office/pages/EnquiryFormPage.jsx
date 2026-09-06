@@ -1,13 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import { useCreateEnquiry, useEnquiry, useUpdateEnquiry } from "@/lib/api/queries";
+import { fromEnquiryForm } from "@/lib/api/adapters";
 import EnquiryForm from "../components/EnquiryForm";
 
 export default function EnquiryFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { enquiries, addEnquiry, updateEnquiry } = useFrontOffice();
-  const editing = id ? enquiries.find((e) => e.id === id) : null;
+  const { data: editing, isLoading } = useEnquiry(id);
+  const [saveError, setSaveError] = useState("");
+  const createEnquiry = useCreateEnquiry();
+  const updateEnquiry = useUpdateEnquiry();
   const isEdit = Boolean(id);
 
   const lockedStatuses = [
@@ -16,6 +19,11 @@ export default function EnquiryFormPage() {
     "Verified",
     "Accounts Created",
   ];
+
+  // "Not found" must not be shown while the fetch is still in flight.
+  if (isEdit && isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading inquiry…</div>;
+  }
 
   if (isEdit && !editing) {
     return (
@@ -42,7 +50,7 @@ export default function EnquiryFormPage() {
           This inquiry can no longer be edited from Front Office.
         </p>
         <Link
-          to={`/front-office/enquiries?open=${editing.id}`}
+          to={`/front-office/enquiries?open=${editing.name}`}
           className="text-sm font-medium text-green-700 hover:underline"
         >
           View inquiry
@@ -51,18 +59,26 @@ export default function EnquiryFormPage() {
     );
   }
 
-  const handleSave = (payload) => {
-    if (isEdit) {
-      updateEnquiry({ ...editing, ...payload, id: editing.id });
-      navigate(`/front-office/enquiries?open=${editing.id}`, { replace: true });
-      return;
+  // Creating returns the new record, so the redirect waits for the server
+  // rather than guessing an id.
+  //
+  // The save can genuinely fail now (validation, permissions), so the rejection
+  // is caught and shown. Letting it escape leaves the user on a form that looks
+  // like it did nothing, with the reason only in the console.
+  const handleSave = async (values) => {
+    const payload = fromEnquiryForm(values);
+    setSaveError("");
+    try {
+      if (isEdit) {
+        await updateEnquiry.mutateAsync({ name: editing.name, payload });
+        navigate(`/front-office/enquiries?open=${editing.name}`, { replace: true });
+        return;
+      }
+      const created = await createEnquiry.mutateAsync(payload);
+      navigate(`/front-office/enquiries?open=${created.name}`, { replace: true });
+    } catch (err) {
+      setSaveError(err?.message || "Could not save the inquiry. Please try again.");
     }
-    const newId = addEnquiry({
-      ...payload,
-      status: "Inquiry",
-      followUps: [],
-    });
-    navigate(`/front-office/enquiries?open=${newId}`, { replace: true });
   };
 
   return (
@@ -88,6 +104,12 @@ export default function EnquiryFormPage() {
           </p>
         </div>
       </div>
+
+      {saveError ? (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {saveError}
+        </p>
+      ) : null}
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
         <EnquiryForm

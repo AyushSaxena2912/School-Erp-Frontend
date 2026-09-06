@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import {
+  useComplaint,
+  useRegisterComplaint,
+  useStudents,
+  useUpdateComplaint,
+} from "@/lib/api/queries";
+import { fromComplaintView, toStudentOption } from "@/lib/api/adapters";
 import { COMPLAINT_NATURES, COMPLAINT_RELATIONS, complaintSourceLabel, formatStudentLabel } from "../data/seed";
 import {
   Field,
@@ -51,12 +57,49 @@ function formFromComplaint(c) {
   };
 }
 
+/**
+ * Fetches the complaint, then hands it to the form.
+ *
+ * The split matters: the form seeds its state from `editing` with lazy
+ * `useState` initialisers, which run once at mount. If the form owned the
+ * query it would mount before the data arrived and stay blank forever.
+ */
 export default function ComplaintFormPage() {
   const { id } = useParams();
+  const { data: editing, isLoading } = useComplaint(id);
+
+  if (id && isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading complaint…</div>;
+  }
+
+  if (id && !editing) {
+    return (
+      <div className="rounded-lg bg-white p-8 shadow-sm">
+        <h2 className="mb-2 text-xl font-bold text-gray-900">
+          Complaint not found
+        </h2>
+        <Link
+          to="/front-office/complaints"
+          className="text-sm font-medium text-green-700 hover:underline"
+        >
+          Back to complaints
+        </Link>
+      </div>
+    );
+  }
+
+  return <ComplaintFormBody key={id ?? "new"} id={id} editing={editing} />;
+}
+
+function ComplaintFormBody({ id, editing }) {
   const navigate = useNavigate();
-  const { students, complaints, addComplaint, updateComplaint, currentUser } =
-    useFrontOffice();
-  const editing = id ? complaints.find((c) => c.id === id) : null;
+  const register = useRegisterComplaint();
+  const update = useUpdateComplaint();
+  const { data: studentRecords } = useStudents();
+  const students = useMemo(
+    () => (studentRecords ?? []).map(toStudentOption),
+    [studentRecords],
+  );
   const isEdit = Boolean(id);
 
   const [form, setForm] = useState(() =>
@@ -71,9 +114,14 @@ export default function ComplaintFormPage() {
 
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
 
+  // Opened by focus, not only by typing — an empty box should still show what
+  // is available (or that nothing is).
+  const [studentOpen, setStudentOpen] = useState(false);
+
   const studentMatches = useMemo(() => {
+    if (form.studentId) return [];
     const q = studentQuery.trim().toLowerCase();
-    if (q.length < 1 || form.studentId) return [];
+    if (!q) return students.slice(0, 6);
     return students
       .filter(
         (s) =>
@@ -119,23 +167,7 @@ export default function ComplaintFormPage() {
     set("description", value.endsWith(" ") ? `${trimmed} ` : trimmed);
   };
 
-  if (isEdit && !editing) {
-    return (
-      <div className="rounded-lg bg-white p-8 shadow-sm">
-        <h2 className="mb-2 text-xl font-bold text-gray-900">
-          Complaint not found
-        </h2>
-        <Link
-          to="/front-office/complaints"
-          className="text-sm font-medium text-green-700 hover:underline"
-        >
-          Back to complaints
-        </Link>
-      </div>
-    );
-  }
-
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
 
     let currentStudentId = form.studentId;
@@ -168,8 +200,15 @@ export default function ComplaintFormPage() {
     if (!/^\d{10}$/.test(String(form.contact || "").trim())) {
       next.contact = "Enter a valid 10-digit number";
     }
-    if (!currentStudentId) {
-      next.student = "Please select a student from the dropdown list";
+    // The student is optional, matching `Complaint Register.student` (a Link to
+    // Student with reqd=0). The complainant is who the record is really about;
+    // the desk also takes complaints from parents of applicants, vendors and
+    // neighbours, none of whom are enrolled students.
+    //
+    // If a name was typed but matched nothing, say so rather than silently
+    // dropping it — otherwise the complaint is filed against no one.
+    if (!currentStudentId && studentQuery.trim()) {
+      next.student = "No student matched. Clear the box to file without one.";
     }
     if (!form.description.trim()) next.description = "Required";
     else if (countWords(form.description) > MAX_DESC_WORDS) {
@@ -183,6 +222,10 @@ export default function ComplaintFormPage() {
 
     const payload = {
       ...form,
+      // Send the source the form is showing. Without it the DocType default
+      // ("Offline · Parent / Guardian") is stored, so a complaint displayed as
+      // "Offline · Student" was silently saved as something else.
+      source: complaintSourceLabel({ mode: form.mode || "Offline", relation: form.relation }),
       ...(currentStudent
         ? {
             studentId: currentStudent.id,
@@ -194,33 +237,26 @@ export default function ComplaintFormPage() {
         : {}),
     };
 
-    if (isEdit) {
-      updateComplaint({
-        ...editing,
-        ...payload,
-        id: editing.id,
-        mode: editing.mode || "Offline",
-        raisedBy: editing.raisedBy || "Front Office",
-        recordedBy: editing.recordedBy || "",
-      });
-      navigate(`/front-office/complaints?open=${editing.id}`, {
-        replace: true,
-      });
-      return;
-    }
+    // `recorded_by` is stamped server-side from the session; the client does not
+    // get to claim who filed a complaint.
+    const body = fromComplaintView(payload);
 
-    const newId = addComplaint({
-      ...payload,
-      mode: "Offline",
-      raisedBy: "Front Office",
-      recordedBy: currentUser?.name || "",
-    });
-    navigate(
-      newId
-        ? `/front-office/complaints?open=${newId}`
-        : "/front-office/complaints",
-      { replace: true }
-    );
+    // A save can genuinely fail now (validation, permissions). Without this the
+    // form would sit there looking inert, with the reason only in the console.
+    try {
+      if (isEdit) {
+        await update.mutateAsync({ name: editing.name, payload: body });
+        navigate(`/front-office/complaints?open=${editing.name}`, { replace: true });
+        return;
+      }
+
+      const created = await register.mutateAsync(body);
+      navigate(`/front-office/complaints?open=${created.name}`, { replace: true });
+    } catch (err) {
+      setErrors({
+        submit: err?.message || "Could not save the complaint. Please try again.",
+      });
+    }
   };
 
   return (
@@ -250,6 +286,12 @@ export default function ComplaintFormPage() {
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6 lg:p-7">
         <form className="space-y-5" onSubmit={submit}>
+          {errors.submit ? (
+            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errors.submit}
+            </p>
+          ) : null}
+
           <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
             Source:{" "}
             <span className="font-medium text-gray-900">
@@ -307,7 +349,7 @@ export default function ComplaintFormPage() {
               />
             </Field>
 
-            <Field label="Student" required error={errors.student}>
+            <Field label="Student" error={errors.student}>
               {form.studentId ? (
                 <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
                   <span>{formatStudentLabel(form)}</span>
@@ -320,15 +362,23 @@ export default function ComplaintFormPage() {
                   </button>
                 </div>
               ) : (
-                <>
+                <div className="relative">
                   <input
                     className={inputClass}
                     value={studentQuery}
                     onChange={(e) => setStudentQuery(e.target.value)}
-                    placeholder="Search name or scholar number"
+                    onFocus={() => setStudentOpen(true)}
+                    onBlur={() => setStudentOpen(false)}
+                    placeholder="Search name or scholar number (optional)"
                   />
-                  {studentMatches.length > 0 ? (
-                    <ul className="mt-1 overflow-hidden rounded-md border border-gray-200 bg-white">
+                  {!studentOpen ? null : studentMatches.length > 0 ? (
+                    <ul
+                      // Keep focus on the input: a blur here would unmount the
+                      // list before the click landed, so options selected only
+                      // when mouseup beat the close.
+                      onMouseDown={(e) => e.preventDefault()}
+                      className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg"
+                    >
                       {studentMatches.map((s) => (
                         <li key={s.id}>
                           <button
@@ -341,8 +391,14 @@ export default function ComplaintFormPage() {
                         </li>
                       ))}
                     </ul>
-                  ) : null}
-                </>
+                  ) : (
+                    <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                      <li className="px-3 py-2 text-sm text-gray-500">
+                        No students
+                      </li>
+                    </ul>
+                  )}
+                </div>
               )}
             </Field>
 

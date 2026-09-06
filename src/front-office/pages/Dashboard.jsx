@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useFrontOffice } from "../context/FrontOfficeContext";
-import { formatFollowUpTimeLabel, followUpSortKey, getFollowUpUrgency, getNextPendingFollowUp, todayISO } from "../data/seed";
+import { useCheckOutVisitor, useDashboard } from "@/lib/api/queries";
+import { formatFollowUpTimeLabel } from "../data/seed";
 import { StatusBadge, btnPrimary, btnSecondary } from "../components/ui";
 
 function StatCard({ label, value, hint, to, color }) {
@@ -35,91 +35,92 @@ function SectionHeader({ title, to, linkLabel }) {
   );
 }
 
+const joinName = (...parts) => parts.filter(Boolean).join(" ").trim();
+
+/**
+ * The backend speaks snake_case; this view was written against camelCase.
+ * Mapping happens here, at the edge — the API contract has one spelling per
+ * field and the UI adapts, never the other way round.
+ */
+function adaptCall(row) {
+  return {
+    id: row.enquiry,
+    studentName: row.student_name,
+    classId: row.class_applying_for,
+    guardianName: row.guardian_name,
+    parentName: row.guardian_name,
+    contact: row.guardian_mobile,
+    overdue: row.is_overdue,
+    next: { dateToCall: row.date_to_call, timeType: row.time_preference, notes: row.notes },
+  };
+}
+
+function adaptVisitor(row) {
+  return {
+    id: row.name,
+    name: row.visitor_name,
+    purpose: row.purpose_of_visit,
+    whomToMeet: row.whom_to_meet,
+    checkIn: row.check_in_time,
+  };
+}
+
+function adaptComplaint(row) {
+  return {
+    id: row.name,
+    complainantName: row.complainant_name,
+    studentName: row.student,
+    nature: row.nature_of_complaint,
+    natureOther: null,
+    status: row.status,
+  };
+}
+
+function adaptLead(row) {
+  return {
+    id: row.name,
+    studentName: joinName(row.student_first_name, row.student_last_name),
+    classId: row.class_applying_for,
+    guardianName: joinName(row.guardian_first_name, row.guardian_last_name),
+    parentName: joinName(row.guardian_first_name, row.guardian_last_name),
+    contact: row.guardian_mobile,
+    leadType: row.lead_temperature,
+    status: row.status,
+  };
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const {
-    enquiries,
-    visitors,
-    complaints,
-    classes,
-    checkOutVisitor,
-  } = useFrontOffice();
-  const today = todayISO();
+  const { data: summary, isLoading, isError, error } = useDashboard();
+  const checkOut = useCheckOutVisitor();
   const [selectedLeadTab, setSelectedLeadTab] = useState("all");
 
+  // Counters and worklists are computed server-side in one round trip; this
+  // view no longer derives them from the full enquiry/visitor/complaint arrays.
   const data = useMemo(() => {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekIso = weekAgo.toISOString().slice(0, 10);
-
-    const dueCalls = enquiries
-      .filter((e) => {
-        if (e.converted || e.status === "Lost" || e.status === "Admitted" || e.status === "Accounts Created")
-          return false;
-        const nextFu = getNextPendingFollowUp(e);
-        if (!nextFu) return false;
-        const urgency = getFollowUpUrgency(nextFu);
-        return urgency === "Today" || urgency === "Overdue";
-      })
-      .map((e) => {
-        const nextFu = getNextPendingFollowUp(e);
-        const urgency = getFollowUpUrgency(nextFu);
-        return {
-          ...e,
-          next: nextFu,
-          overdue: urgency === "Overdue",
-        };
-      })
-      .sort((a, b) =>
-        followUpSortKey(a.next).localeCompare(followUpSortKey(b.next))
-      );
-
-    const overdueCount = dueCalls.filter((e) => e.overdue).length;
-
-    const todayVisitors = visitors
-      .filter((v) => (v.checkIn || "").startsWith(today))
-      .sort((a, b) => (b.checkIn || "").localeCompare(a.checkIn || ""));
-
-    const stillInside = todayVisitors.filter((v) => !v.checkOut);
-
-    const openComplaints = complaints
-      .filter((c) => c.status === "New" || c.status === "In Progress")
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-
-    const newThisWeek = enquiries.filter((e) => e.createdAt >= weekIso).length;
-
-    // Active leads breakdown by temperature (Hot, Warm, Cold)
-    const activeLeads = enquiries.filter(
-      (e) => !e.converted && e.status !== "Lost" && e.status !== "Admitted" && e.status !== "Accounts Created"
-    );
-
-    const hotLeads = activeLeads.filter(
-      (e) => e.leadType === "Hot Lead" || e.lead_temperature === "Hot Lead"
-    );
-
-    const warmLeads = activeLeads.filter(
-      (e) => e.leadType === "Warm Lead" || e.lead_temperature === "Warm Lead" || (!e.leadType && !e.lead_temperature)
-    );
-
-    const coldLeads = activeLeads.filter(
-      (e) => e.leadType === "Cold Lead" || e.lead_temperature === "Cold Lead"
-    );
-
+    const counters = summary?.counters ?? {};
+    const leads = (summary?.active_leads ?? []).map(adaptLead);
     return {
-      dueCalls,
-      overdueCount,
-      todayVisitors,
-      stillInside,
-      openComplaints,
-      newThisWeek,
-      activeLeads,
-      hotLeads,
-      warmLeads,
-      coldLeads,
+      dueCalls: (summary?.calls_due ?? []).map(adaptCall),
+      overdueCount: counters.calls_overdue ?? 0,
+      stillInside: (summary?.visitors_inside ?? []).map(adaptVisitor),
+      // "Checked in today" is a different question from "still inside" — the
+      // aggregate counts it server-side, so use the counter rather than the
+      // length of the still-inside list.
+      todayVisitorCount: counters.visitors_today ?? 0,
+      openComplaints: (summary?.open_complaints ?? []).map(adaptComplaint),
+      newThisWeek: counters.new_enquiries_this_week ?? 0,
+      activeLeads: leads,
+      hotLeads: leads.filter((l) => l.leadType === "Hot Lead"),
+      warmLeads: leads.filter((l) => l.leadType === "Warm Lead"),
+      coldLeads: leads.filter((l) => l.leadType === "Cold Lead"),
     };
-  }, [enquiries, visitors, complaints, today]);
+  }, [summary]);
 
-  const className = (id) => classes.find((c) => c.id === id || c.name === id)?.name || id || "—";
+  // Grade names are the Grade record's own name, so no lookup is needed.
+  const className = (id) => id || "—";
+
+  const checkOutVisitor = (id) => checkOut.mutate(id);
 
   const displayedLeads = useMemo(() => {
     if (selectedLeadTab === "Hot Lead") return data.hotLeads;
@@ -128,17 +129,28 @@ export default function Dashboard() {
     return data.activeLeads;
   }, [selectedLeadTab, data]);
 
-  const nowLocal = () => {
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
+  // Frappe datetimes are "YYYY-MM-DD HH:mm:ss"; the old shape used a "T".
   const formatTime = (value) => {
     if (!value) return "—";
-    const time = value.split("T")[1];
-    return time || value;
+    const [, time] = String(value).split(/[T ]/);
+    return time ? time.slice(0, 5) : value;
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 text-sm text-gray-500">Loading dashboard…</div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error?.message || "Could not load the dashboard."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -176,7 +188,7 @@ export default function Dashboard() {
         <StatCard
           label="Visitors inside"
           value={data.stillInside.length}
-          hint={`${data.todayVisitors.length} checked in today`}
+          hint={`${data.todayVisitorCount} checked in today`}
           to="/front-office/visitors"
           color="text-sky-700"
         />
@@ -452,7 +464,7 @@ export default function Dashboard() {
                   <button
                     type="button"
                     className={btnPrimary}
-                    onClick={() => checkOutVisitor(v.id, nowLocal())}
+                    onClick={() => checkOutVisitor(v.id)}
                   >
                     Check Out
                   </button>

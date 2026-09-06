@@ -1,5 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useAdmissionFormFieldRecords,
+  useCreateAdmissionFormField,
+  useDeleteAdmissionFormField,
+  useUpdateAdmissionFormField,
+} from "@/lib/api/queries";
 import {
   EmptyState,
   Field,
@@ -87,16 +92,64 @@ function FieldActionsMenu({ items }) {
   );
 }
 
+/** Frappe fieldtypes, mapped to the labels this screen already uses. */
+const TYPE_TO_UI = {
+  Data: "Text",
+  "Small Text": "Text",
+  Int: "Number",
+  Float: "Number",
+  Date: "Date",
+  Select: "Dropdown",
+  Check: "Checkbox",
+};
+const UI_TO_TYPE = { Text: "Data", Number: "Int", Date: "Date", Dropdown: "Select", Checkbox: "Check" };
+
 export default function SettingsPage() {
-  const {
-    customFields,
-    systemFields,
-    addCustomField,
-    updateCustomField,
-    deleteCustomField,
-    updateSystemField,
-    deleteSystemField,
-  } = useFrontOffice();
+  const { data: fieldRecords, isLoading, isError, error } = useAdmissionFormFieldRecords();
+  const createField = useCreateAdmissionFormField();
+  const updateField = useUpdateAdmissionFormField();
+  const removeField = useDeleteAdmissionFormField();
+
+  const customFields = useMemo(
+    () =>
+      (fieldRecords ?? []).map((f) => ({
+        id: f.name,
+        key: f.field_key,
+        label: f.label,
+        type: TYPE_TO_UI[f.fieldtype] || "Text",
+        required: Boolean(f.is_mandatory),
+        active: Boolean(f.is_active),
+        options: (f.options || "").split("\n").filter(Boolean),
+      })),
+    [fieldRecords],
+  );
+
+  // Standard admission fields live on the DocType itself and are not editable
+  // from here; changing them is a schema change, not configuration.
+  const systemFields = [];
+
+  const toRecord = (payload) => ({
+    label: payload.label,
+    fieldtype: UI_TO_TYPE[payload.type] || "Data",
+    is_mandatory: payload.required ? 1 : 0,
+    ...(payload.active !== undefined ? { is_active: payload.active ? 1 : 0 } : {}),
+    ...(payload.options ? { options: payload.options.join("\n") } : {}),
+  });
+
+  const addCustomField = (payload) =>
+    createField.mutate({
+      // field_key is the stable machine key and cannot change once set.
+      field_key: payload.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""),
+      ...toRecord(payload),
+    });
+
+  const updateCustomField = ({ id, ...payload }) =>
+    updateField.mutate({ name: id, values: toRecord(payload) });
+
+  const deleteCustomField = (id) => removeField.mutate(id);
+
+  const updateSystemField = () => {};
+  const deleteSystemField = () => {};
 
   const [fieldModal, setFieldModal] = useState(false);
   const [editingField, setEditingField] = useState(null);
@@ -163,6 +216,20 @@ export default function SettingsPage() {
     }
     setFieldModal(false);
   };
+
+  if (isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading settings…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error?.message || "Could not load settings."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

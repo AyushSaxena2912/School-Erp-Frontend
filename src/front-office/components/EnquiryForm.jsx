@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import { useAdmissionFormFields, useClasses } from "@/lib/api/queries";
 import { joinNameParts, splitFullName, GUARDIAN_RELATIONS, ACTIVE_LEAD_TYPES, LEAD_TYPE_HINTS } from "../data/seed";
 import { Field, btnPrimary, btnSecondary, inputClass, selectClass } from "./ui";
 
@@ -58,7 +58,27 @@ function splitPhone(raw) {
  * student name, class, parent name, parent mobile or email.
  */
 export default function EnquiryForm({ initial, onSave, onCancel }) {
-  const { classes, customFields } = useFrontOffice();
+  const { data: classList } = useClasses();
+  const { data: formFieldDefs } = useAdmissionFormFields();
+
+  const classes = useMemo(
+    () => (classList ?? []).map((c) => ({ id: c.name, name: c.grade_name || c.name })),
+    [classList],
+  );
+  // School-defined extra fields are rendered generically from their
+  // definitions, so adding a field needs no frontend change.
+  const customFields = useMemo(
+    () =>
+      (formFieldDefs ?? []).map((f) => ({
+        id: f.field_key,
+        key: f.field_key,
+        label: f.label,
+        type: f.fieldtype,
+        options: f.options,
+        required: f.is_mandatory,
+      })),
+    [formFieldDefs],
+  );
   const [customValues, setCustomValues] = useState(() => {
     if (typeof initial?.customValues === "object" && initial.customValues) return initial.customValues;
     if (typeof initial?.custom_fields === "object" && initial.custom_fields) return initial.custom_fields;

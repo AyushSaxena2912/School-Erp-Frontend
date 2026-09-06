@@ -1,6 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import {
+  useAddFollowup,
+  useAdmissionLink,
+  useEnquiry,
+  useAdmissionFormFields,
+  useApproveAdmission,
+  useClasses,
+  useCreateEnquiry,
+  useEnquiries,
+  useProvisionAccounts,
+  useSetEnquiryStatus,
+} from "@/lib/api/queries";
+import { enquiries as enquiriesApi } from "@/lib/api/endpoints";
+import * as resource from "@/lib/api/resource";
+import { joinName } from "@/lib/api/adapters";
 import {
   LEAD_TYPES,
   ADMISSION_STATUSES,
@@ -197,23 +211,150 @@ function admissionLink(token) {
   return `${window.location.origin}/admission/${token}`;
 }
 
+const PIPELINE_WITH_LINK = [
+  "Admission Approved",
+  "Form Sent",
+  "Corrections Requested",
+  "Corrections Submitted",
+  "Form Submitted",
+  "Verified",
+  "Accounts Created",
+];
+
 export default function EnquiriesPage() {
   const navigate = useNavigate();
   const {
-    enquiries,
-    classes,
-    deleteEnquiries,
-    addEnquiry,
-    addFollowUp,
-    approveAdmission,
-    sendAdmissionForm,
-    requestAdmissionCorrections,
-    verifyAdmission,
-    createAdmissionAccounts,
-    customFields,
-  } = useFrontOffice();
+    data: enquiryPage,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useEnquiries({
+    fields: [
+      "name",
+      "student_first_name",
+      "student_middle_name",
+      "student_last_name",
+      "gender",
+      "class_applying_for",
+      "academic_year",
+      "student_mobile",
+      "guardian_relation",
+      "guardian_first_name",
+      "guardian_last_name",
+      "guardian_mobile",
+      "guardian_email",
+      "lead_temperature",
+      "status",
+      "enquiry_source",
+      "enquiry_details",
+      "creation",
+    ],
+    orderBy: "creation desc",
+    limitPageLength: 0,
+  });
+
+  const { data: classList } = useClasses();
+  const { data: formFieldDefs } = useAdmissionFormFields();
+
+  const createEnquiry = useCreateEnquiry();
+  const addFollowupMutation = useAddFollowup();
+  const approve = useApproveAdmission();
+  const setStatus = useSetEnquiryStatus();
+  const provision = useProvisionAccounts();
+
+  /**
+   * Parent-form links issued during this session.
+   *
+   * The token is returned exactly once, when it is issued, and is stored only
+   * as a hash server-side. It cannot be read back off the
+   * enquiry the way `admissionToken` used to be — so a link that was not issued
+   * in this session must be regenerated, which invalidates the previous one.
+   */
+  const [issuedLinks, setIssuedLinks] = useState({});
+
+  const rememberLink = (result) => {
+    setIssuedLinks((prev) => ({
+      ...prev,
+      [result.name]: { token: result.admission_token, expiresOn: result.token_expires_on },
+    }));
+    return result.admission_token;
+  };
+
+  const enquiries = useMemo(
+    () =>
+      (enquiryPage?.items ?? []).map((row) => ({
+        id: row.name,
+        name: row.name,
+        studentName: joinName(row.student_first_name, row.student_last_name),
+        classId: row.class_applying_for,
+        className: row.class_applying_for,
+        parentName: joinName(row.guardian_first_name, row.guardian_last_name),
+        parentEmail: row.guardian_email,
+        parentMobile: row.guardian_mobile,
+        studentMobile: row.student_mobile,
+        contact: row.guardian_mobile,
+        leadType: row.lead_temperature,
+        lead_temperature: row.lead_temperature,
+        status: row.status,
+        source: row.enquiry_source,
+        notes: row.enquiry_details,
+        createdAt: row.creation,
+        followUps: [],
+      })),
+    [enquiryPage],
+  );
+
+  const classes = useMemo(
+    () => (classList ?? []).map((c) => ({ id: c.name, name: c.grade_name || c.name })),
+    [classList],
+  );
+  const customFields = useMemo(
+    () =>
+      (formFieldDefs ?? []).map((f) => ({
+        id: f.field_key,
+        key: f.field_key,
+        label: f.label,
+        type: f.fieldtype,
+        options: f.options,
+        required: f.is_mandatory,
+      })),
+    [formFieldDefs],
+  );
+
+  const deleteEnquiries = async (ids) => {
+    await resource.removeMany("Admission Enquiry", ids);
+    refetch();
+  };
+
+  const addEnquiry = (payload) => createEnquiry.mutate(payload);
+
+  const addFollowUp = (enquiryId, followup) =>
+    addFollowupMutation.mutate({ name: enquiryId, followup });
+
+  const approveAdmission = (id) =>
+    approve.mutateAsync(id).then(rememberLink);
+
+  /** Issues a fresh parent-form link, invalidating any previous one. */
+  const sendAdmissionForm = (id) => enquiriesApi.reissueToken(id).then(rememberLink);
+
+  const requestAdmissionCorrections = (id, notes) =>
+    setStatus.mutate({ name: id, status: "Corrections Requested", enquiry_details: notes });
+
+  const verifyAdmission = (id) => setStatus.mutate({ name: id, status: "Verified" });
+
+  const createAdmissionAccounts = (id) => provision.mutateAsync(id);
   const [params, setParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState(params.get("open") || null);
+
+  // The link is readable from the server at any time (it is encrypted at rest,
+  // not hashed-only), so the detail panel shows it exactly as it always has.
+  // Declared after `selectedId`, which it reads.
+  const { data: linkData } = useAdmissionLink(selectedId);
+  const linkFor = (enquiryId) =>
+    issuedLinks[enquiryId]?.token ||
+    (linkData?.name === enquiryId ? linkData.admission_token : null);
+
   const [followUpFor, setFollowUpFor] = useState(params.get("followUp") || null);
   const [approveId, setApproveId] = useState(null);
   const [correctionNotes, setCorrectionNotes] = useState("");
@@ -222,8 +363,11 @@ export default function EnquiriesPage() {
   const [correctionError, setCorrectionError] = useState("");
   const [showCorrectionSent, setShowCorrectionSent] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedCredentials, setCopiedCredentials] = useState(false);
   const [accountInfo, setAccountInfo] = useState(null);
+  // Pipeline actions hit the server and can be refused (illegal transition,
+  // missing permission). Without somewhere to put the reason the buttons would
+  // appear to do nothing.
+  const [actionError, setActionError] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [search, setSearch] = useState("");
@@ -332,10 +476,27 @@ export default function EnquiriesPage() {
     [filtered, startIndex, pageSize]
   );
 
+  // The list query does not carry follow-ups (that was an N+1 join per row);
+  // the detail query does, so merge it in when a row is open.
+  const { data: selectedDetail } = useEnquiry(selectedId);
+
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    return enquiries.find((e) => e.id === selectedId || e.name === selectedId) || null;
-  }, [selectedId, enquiries]);
+    const row = enquiries.find((e) => e.id === selectedId || e.name === selectedId) || null;
+    if (!row) return null;
+    return {
+      ...row,
+      followUps: (selectedDetail?.followups ?? []).map((f) => ({
+        id: f.name,
+        dateToCall: f.date_to_call,
+        timeType: f.time_preference,
+        notes: f.notes,
+        outcome: f.call_outcome,
+        calledBy: f.called_by,
+        createdAt: f.creation,
+      })),
+    };
+  }, [selectedId, enquiries, selectedDetail]);
 
 
   const toggleSelect = (id) => {
@@ -513,6 +674,20 @@ export default function EnquiriesPage() {
       window.alert("Could not read the CSV file.");
     }
   };
+
+  if (isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading enquiries…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error?.message || "Could not load enquiries."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -726,9 +901,15 @@ export default function EnquiriesPage() {
           <button
             type="button"
             className={btnPrimary}
-            onClick={() => {
-              approveAdmission(approveId);
+            onClick={async () => {
+              const id = approveId;
               setApproveId(null);
+              setActionError("");
+              try {
+                await approveAdmission(id);
+              } catch (err) {
+                setActionError(err?.message || "Could not approve the admission.");
+              }
             }}
           >
             Approve Admission
@@ -811,16 +992,11 @@ export default function EnquiriesPage() {
           open the admission form link, fix the details, and resubmit.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          {selected?.admissionToken ? (
+          {selected && linkFor(selected.id) ? (
             <button
               type="button"
               className={btnSecondary}
-              onClick={() => {
-                window.open(
-                  admissionLink(selected.admissionToken),
-                  "_blank"
-                );
-              }}
+              onClick={() => window.open(admissionLink(linkFor(selected.id)), "_blank")}
             >
               Open parent form
             </button>
@@ -837,59 +1013,59 @@ export default function EnquiriesPage() {
 
       <Modal
         open={!!accountInfo}
-        title="Account Credentials"
+        title="Accounts created"
         onClose={() => setAccountInfo(null)}
       >
         {accountInfo ? (
           <div className="space-y-4 text-sm">
-            <p className="text-xs text-gray-500">
-              Student and parent login credentials generated successfully.
+            {/*
+              No password is shown because none exists to show: the backend
+              never sets or returns one. Each new account is activated through
+              Frappe's standard reset-password email, so no credential ever
+              transits this API.
+            */}
+            <p className="text-gray-600">
+              Accounts are ready. Each new user receives an email with a link to
+              set their own password — no password is created or shared here.
             </p>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3.5 text-xs">
-              <div>
-                <h4 className="font-semibold text-gray-900 text-xs mb-2">Student Account</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <span className="text-gray-500 block font-medium">User ID</span>
-                    <span className="font-semibold text-gray-900">{accountInfo.admissionNumber}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block font-medium">Password</span>
-                    <span className="font-mono text-gray-900">{accountInfo.studentPassword || "Stud@2026#"}</span>
-                  </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3 text-xs">
+              {accountInfo.created_users?.length ? (
+                <div>
+                  <h4 className="mb-2 text-xs font-semibold text-gray-900">
+                    Created ({accountInfo.created_users.length})
+                  </h4>
+                  <ul className="space-y-1">
+                    {accountInfo.created_users.map((email) => (
+                      <li key={email} className="font-mono text-gray-800">
+                        {email}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
+              ) : null}
 
-              <hr className="border-gray-100" />
-
-              <div>
-                <h4 className="font-semibold text-gray-900 text-xs mb-2">Parent Account</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <span className="text-gray-500 block font-medium">User ID</span>
-                    <span className="font-semibold text-gray-900">{accountInfo.parentUsername || accountInfo.parentMobile || accountInfo.parentEmail || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block font-medium">Password</span>
-                    <span className="font-mono text-gray-900">{accountInfo.parentPassword || accountInfo.parentActivationToken || "Parent@2026#"}</span>
-                  </div>
+              {accountInfo.existing_users?.length ? (
+                <div>
+                  <h4 className="mb-2 text-xs font-semibold text-gray-900">
+                    Already existed ({accountInfo.existing_users.length})
+                  </h4>
+                  <ul className="space-y-1">
+                    {accountInfo.existing_users.map((email) => (
+                      <li key={email} className="font-mono text-gray-800">
+                        {email}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-gray-500">
+                    These accounts were linked, not modified. Their existing
+                    passwords are unchanged.
+                  </p>
                 </div>
-              </div>
+              ) : null}
             </div>
 
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                className={btnSecondary}
-                onClick={() => {
-                  const text = `Student ID: ${accountInfo.admissionNumber}\nPassword: ${accountInfo.studentPassword || "Stud@2026#"}\n\nParent ID: ${accountInfo.parentUsername || "—"}\nPassword: ${accountInfo.parentPassword || "Parent@2026#"}`;
-                  navigator.clipboard.writeText(text);
-                  alert("Credentials copied to clipboard!");
-                }}
-              >
-                Copy credentials
-              </button>
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 className={btnPrimary}
@@ -909,10 +1085,16 @@ export default function EnquiriesPage() {
           setSelectedId(null);
           setParams({});
           setCopiedLink(false);
+          setActionError("");
         }}
       >
         {selected ? (
           <div className="space-y-5">
+            {actionError ? (
+              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {actionError}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={selected.status || "Inquiry"} />
               {selected.leadType ? (
@@ -988,31 +1170,20 @@ export default function EnquiriesPage() {
               ) : null}
             </dl>
 
-            {(selected.status === "Form Sent" ||
-            selected.status === "Corrections Requested" ||
-            selected.status === "Corrections Submitted" ||
-            selected.status === "Form Submitted" ||
-            selected.status === "Verified" ||
-            selected.status === "Accounts Created" ||
-            selected.admissionToken) ? (
-              (() => {
-                const token = selected.admissionToken || sendAdmissionForm(selected.id);
-                return (
-                  <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
-                    <p className="font-medium text-gray-900">Parent form link</p>
-                    <p className="mt-1 break-all text-xs text-gray-600">
-                      {admissionLink(token)}
-                    </p>
-                    <button
-                      type="button"
-                      className={`${btnSecondary} mt-2`}
-                      onClick={() => copyLink(token)}
-                    >
-                      {copiedLink ? "Copied" : "Copy link"}
-                    </button>
-                  </div>
-                );
-              })()
+            {PIPELINE_WITH_LINK.includes(selected.status) && linkFor(selected.id) ? (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+                <p className="font-medium text-gray-900">Parent form link</p>
+                <p className="mt-1 break-all text-xs text-gray-600">
+                  {admissionLink(linkFor(selected.id))}
+                </p>
+                <button
+                  type="button"
+                  className={`${btnSecondary} mt-2`}
+                  onClick={() => copyLink(linkFor(selected.id))}
+                >
+                  {copiedLink ? "Copied" : "Copy link"}
+                </button>
+              </div>
             ) : null}
 
             {selected.status === "Corrections Requested" && selected.correctionNotes ? (
@@ -1075,43 +1246,43 @@ export default function EnquiriesPage() {
                 <button
                   type="button"
                   className={btnPrimary}
-                  onClick={() => {
-                    const token = sendAdmissionForm(selected.id);
-                    copyLink(token);
+                  onClick={async () => {
+                    setActionError("");
+                    try {
+                      const token = await sendAdmissionForm(selected.id);
+                      await setStatus.mutateAsync({
+                        name: selected.id,
+                        status: "Form Sent",
+                      });
+                      copyLink(token);
+                    } catch (err) {
+                      setActionError(
+                        err?.message || "Could not send the admission form.",
+                      );
+                    }
                   }}
                 >
                   Send admission form
                 </button>
               ) : null}
 
-              {(selected.status === "Form Sent" ||
-              selected.status === "Corrections Requested" ||
-              selected.status === "Corrections Submitted" ||
-              selected.status === "Form Submitted" ||
-              selected.status === "Verified" ||
-              selected.status === "Accounts Created" ||
-              selected.admissionToken) ? (
-                (() => {
-                  const token = selected.admissionToken || sendAdmissionForm(selected.id);
-                  return (
-                    <>
-                      <button
-                        type="button"
-                        className={btnSecondary}
-                        onClick={() => navigate(`/admission/${token}`)}
-                      >
-                        Open as parent
-                      </button>
-                      <button
-                        type="button"
-                        className={btnSecondary}
-                        onClick={() => navigate(`/admission/${token}?preview=1`)}
-                      >
-                        Open as faculty
-                      </button>
-                    </>
-                  );
-                })()
+              {linkFor(selected.id) ? (
+                <>
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    onClick={() => navigate(`/admission/${linkFor(selected.id)}`)}
+                  >
+                    Open as parent
+                  </button>
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    onClick={() => navigate(`/admission/${linkFor(selected.id)}?preview=1`)}
+                  >
+                    Open as faculty
+                  </button>
+                </>
               ) : null}
 
               {selected.status === "Form Submitted" ||
@@ -1143,80 +1314,39 @@ export default function EnquiriesPage() {
                 <button
                   type="button"
                   className={btnPrimary}
-                  onClick={() => {
+                  onClick={async () => {
                     const enquiryTargetId = selected.id || selected.name;
-                    const info = createAdmissionAccounts(enquiryTargetId);
-                    setAccountInfo(info);
+                    setActionError("");
+                    try {
+                      // `createAdmissionAccounts` is async — awaiting it is what
+                      // puts the result in state rather than the promise itself.
+                      const info = await createAdmissionAccounts(enquiryTargetId);
+                      setAccountInfo(info);
+                    } catch (err) {
+                      setActionError(
+                        err?.message || "Could not create the accounts.",
+                      );
+                    }
                   }}
                 >
                   Create accounts
                 </button>
               ) : null}
 
-              {selected.status === "Accounts Created" ? (
-                <button
-                  type="button"
-                  className={btnPrimary}
-                  onClick={() => {
-                    const sid = selected.admissionNumber?.startsWith("STU-")
-                      ? selected.admissionNumber
-                      : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`;
-                    setAccountInfo({
-                      admissionNumber: sid,
-                      studentPassword: selected.studentPassword || "Stud@2026#",
-                      parentUsername: getParentEmail(selected) || getParentMobile(selected) || "parent@school.edu",
-                      parentPassword: selected.parentActivationToken || selected.parentPassword || "Parent@2026#",
-                    });
-                  }}
-                >
-                  View credentials
-                </button>
-              ) : null}
             </div>
 
             {selected.status === "Accounts Created" ? (
-              <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
-                  <h3 className="font-semibold text-gray-900">Account Credentials</h3>
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-green-700 hover:underline"
-                    onClick={() => {
-                      const sid = selected.admissionNumber?.startsWith("STU-")
-                        ? selected.admissionNumber
-                        : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`;
-                      const text = `Student ID: ${sid}\nPassword: ${selected.studentPassword || "Stud@2026#"}\n\nParent ID: ${getParentEmail(selected) || getParentMobile(selected)}\nPassword: ${selected.parentActivationToken || selected.parentPassword || "Parent@2026#"}`;
-                      navigator.clipboard.writeText(text);
-                      setCopiedCredentials(true);
-                      setTimeout(() => setCopiedCredentials(false), 2000);
-                    }}
-                  >
-                    {copiedCredentials ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-gray-500 block font-medium">Student ID</span>
-                    <span className="font-semibold text-gray-900">
-                      {selected.admissionNumber?.startsWith("STU-")
-                        ? selected.admissionNumber
-                        : `STU-2026-${String(selected.admissionNumber || selected.id).split("-").pop()}`}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block font-medium">Student Password</span>
-                    <span className="font-mono text-gray-900">{selected.studentPassword || "Stud@2026#"}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block font-medium">Parent ID</span>
-                    <span className="font-semibold text-gray-900">{getParentEmail(selected) || getParentMobile(selected) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500 block font-medium">Parent Password</span>
-                    <span className="font-mono text-gray-900">{selected.parentActivationToken || selected.parentPassword || "Parent@2026#"}</span>
-                  </div>
-                </div>
+              <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+                <h3 className="mb-2 font-semibold text-gray-900">Accounts</h3>
+                <p className="text-xs text-gray-600">
+                  Logins have been created for this admission. Passwords are never
+                  stored or displayed — each user sets their own via the activation
+                  email. Use <span className="font-medium">Forgot password</span> on
+                  the login screen to re-send it.
+                </p>
+                <p className="mt-2 text-xs text-gray-500">
+                  Guardian: <span className="font-mono">{getParentEmail(selected) || "—"}</span>
+                </p>
               </div>
             ) : null}
 

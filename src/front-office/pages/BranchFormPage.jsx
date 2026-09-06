@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Building2, Camera, Upload } from "lucide-react";
-import { useFrontOffice } from "../context/FrontOfficeContext";
+import { useBranches, useCreateBranch, useUpdateBranch } from "@/lib/api/queries";
 import {
   Field,
   btnPrimary,
@@ -68,24 +68,24 @@ function formFromBranch(b) {
   };
 }
 
+/**
+ * Fetches the branch, then hands it to the form.
+ *
+ * The form seeds its state with lazy `useState` initialisers, which run once at
+ * mount — so it must not mount until the record is in hand, or an edit would
+ * open blank.
+ */
 export default function BranchFormPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
-  const fileRef = useRef(null);
-  const { branches, addBranch, updateBranch } = useFrontOffice();
-  const editing = id ? branches.find((b) => b.id === id) : null;
-  const isEdit = Boolean(id);
+  const { data: branchRecords, isLoading } = useBranches();
 
-  const [form, setForm] = useState(() =>
-    editing ? formFromBranch(editing) : emptyForm()
-  );
-  const parsedPhone = splitPhone(editing?.phone || "");
-  const [countryCode, setCountryCode] = useState(parsedPhone.code);
-  const [phoneNumber, setPhoneNumber] = useState(parsedPhone.number);
-  const [logoName, setLogoName] = useState("");
-  const [error, setError] = useState("");
+  if (id && isLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading branch…</div>;
+  }
 
-  if (isEdit && !editing) {
+  const record = id ? (branchRecords ?? []).find((b) => b.name === id) : null;
+
+  if (id && !record) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-8">
         <h2 className="mb-2 text-xl font-bold text-gray-900">Branch not found</h2>
@@ -101,6 +101,53 @@ export default function BranchFormPage() {
       </div>
     );
   }
+
+  return <BranchFormBody key={id ?? "new"} id={id} record={record} />;
+}
+
+function BranchFormBody({ id, record }) {
+  const navigate = useNavigate();
+  const fileRef = useRef(null);
+  const createBranch = useCreateBranch();
+  const updateBranchMutation = useUpdateBranch();
+
+  const editing = record
+    ? {
+        id: record.name,
+        name: record.branch_name,
+        code: record.branch_code || "",
+        principalName: record.principal_name || "",
+        email: record.email || "",
+        phone: record.contact_number || "",
+        address: record.address_line || "",
+        status: record.is_active ? "Active" : "Inactive",
+        logo: "",
+      }
+    : null;
+
+  const toRecord = (form) => ({
+    branch_name: form.name,
+    branch_code: form.code || undefined,
+    principal_name: form.principalName || undefined,
+    email: form.email || undefined,
+    contact_number: form.phone || undefined,
+    address_line: form.address || undefined,
+    is_active: form.status === "Active" ? 1 : 0,
+  });
+
+  const addBranch = (form) => createBranch.mutateAsync(toRecord(form));
+  const updateBranch = ({ id: branchId, ...form }) =>
+    updateBranchMutation.mutateAsync({ name: branchId, values: toRecord(form) });
+  const isEdit = Boolean(id);
+
+  const [form, setForm] = useState(() =>
+    editing ? formFromBranch(editing) : emptyForm()
+  );
+  const parsedPhone = splitPhone(editing?.phone || "");
+  const [countryCode, setCountryCode] = useState(parsedPhone.code);
+  const [phoneNumber, setPhoneNumber] = useState(parsedPhone.number);
+  const [logoName, setLogoName] = useState("");
+  const [error, setError] = useState("");
 
   const handleLogoFile = (e) => {
     const file = e.target.files?.[0];
@@ -130,7 +177,7 @@ export default function BranchFormPage() {
     setLogoName("");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) {
       setError("Branch name is required.");
@@ -152,17 +199,18 @@ export default function BranchFormPage() {
       logo: form.logo || "",
     };
 
-    if (isEdit) {
-      updateBranch({ id: editing.id, ...payload });
-    } else {
-      const codeExists = branches.some((b) => b.code === payload.code);
-      if (codeExists) {
-        setError(`Branch code "${payload.code}" already exists.`);
-        return;
+    try {
+      if (isEdit) {
+        await updateBranch({ id: editing.id, ...payload });
+      } else {
+        await addBranch(payload);
       }
-      addBranch(payload);
+      navigate("/front-office/branches", { replace: true });
+    } catch (err) {
+      // branch_code is unique on the DocType, so a duplicate is rejected
+      // server-side rather than being pre-checked against a stale local list.
+      setError(err?.message || "Could not save the branch.");
     }
-    navigate("/front-office/branches", { replace: true });
   };
 
   return (

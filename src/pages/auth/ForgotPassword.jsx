@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { forgotPassword } from "../../api/auth";
+import { auth } from "@/lib/api/endpoints";
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -30,7 +30,7 @@ const ForgotPassword = () => {
     setApiError("");
 
     try {
-      await forgotPassword({ email });
+      await auth.forgotPassword(email);
       setEmailSent(true);
     } catch (err) {
       setApiError(err.message || "Failed to send reset link.");

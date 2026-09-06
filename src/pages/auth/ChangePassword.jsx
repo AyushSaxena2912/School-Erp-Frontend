@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { changePassword } from "../../api/auth";
+import { auth } from "@/lib/api/endpoints";
 import { EyeIcon, EyeOffIcon } from "../../components/PasswordToggleIcon";
 
 const PASSWORD_RULES = [
@@ -80,7 +80,7 @@ const ChangePassword = () => {
     setSuccessMessage("");
 
     try {
-      await changePassword({ currentPassword, newPassword });
+      await auth.changePassword(currentPassword, newPassword);
       setSuccessMessage("Password changed successfully.");
       setCurrentPassword("");
       setNewPassword("");

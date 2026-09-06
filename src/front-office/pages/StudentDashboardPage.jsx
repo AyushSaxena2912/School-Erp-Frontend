@@ -1,7 +1,12 @@
 import React from "react";
+import { useSession } from "@/lib/auth/useSession";
 
 export default function StudentDashboardPage() {
-  const userName = localStorage.getItem("bodhya_user_name") || "Student";
+  // The name comes from the session, not localStorage: login no longer writes
+  // the `bodhya_*` mirror of the user, and the server is the only authority on
+  // who is signed in.
+  const { session } = useSession();
+  const userName = session?.full_name || session?.user || "Student";
 
   return (
     <div className="space-y-4">

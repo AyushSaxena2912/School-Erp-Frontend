@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Lock, Eye, EyeOff, X, CheckCircle, AlertCircle, KeyRound } from "lucide-react";
-import { authService } from "../../services/authService";
+import { auth } from "@/lib/api/endpoints";
 
 export default function ChangePasswordModal({ open, onClose, userEmail, userName }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -54,35 +54,15 @@ export default function ChangePasswordModal({ open, onClose, userEmail, userName
 
     setLoading(true);
     try {
-      const targetUser = userEmail || userName || localStorage.getItem("bodhya_user_email") || localStorage.getItem("bodhya_user_name") || "Administrator";
-      const res = await authService.changePassword(currentPassword, newPassword, targetUser);
-
-      if (res?.exc || res?.exc_type) {
-        let msg = "Failed to update password. Please check your current password.";
-        if (res._server_messages) {
-          try {
-            const parsed = JSON.parse(JSON.parse(res._server_messages)[0]);
-            msg = parsed.message || msg;
-          } catch {}
-        }
-        setError(msg);
-      } else if (res?.status === "password_changed" || res?.message?.status === "password_changed" || res?.status === "success") {
-        setSuccess(true);
-        setTimeout(() => {
-          handleClose();
-        }, 1800);
-      } else {
-        setError(res?.message || res?.error || "Failed to update password. Please check your current password.");
-      }
+      // Always acts on the signed-in user — there is no target-user parameter
+      // any more, and the Administrator fallback was a security hole.
+      await auth.changePassword(currentPassword, newPassword);
+      setSuccess(true);
+      setTimeout(handleClose, 1800);
     } catch (err) {
-      let errMsg = err?.message || "Incorrect current password or server error.";
-      if (err?.response?.data?._server_messages) {
-        try {
-          const parsed = JSON.parse(JSON.parse(err.response.data._server_messages)[0]);
-          errMsg = parsed.message || errMsg;
-        } catch {}
-      }
-      setError(errMsg.includes("frappe.exceptions") ? "Incorrect current password." : errMsg);
+      // A failure is a real HTTP status now; the client already extracted the
+      // server's message, so there is nothing to unwrap here.
+      setError(err?.message || "Incorrect current password.");
     } finally {
       setLoading(false);
     }

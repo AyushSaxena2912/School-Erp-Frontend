@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { resetPassword } from "../../api/auth";
+import { auth } from "@/lib/api/endpoints";
 import { EyeIcon, EyeOffIcon } from "../../components/PasswordToggleIcon";
 
 const PASSWORD_RULES = [
@@ -76,7 +76,7 @@ const ResetPassword = () => {
     setApiError("");
 
     try {
-      await resetPassword({ key, newPassword });
+      await auth.resetPassword(key, newPassword);
       setIsSuccess(true);
       setTimeout(() => {
         navigate("/login", { replace: true });

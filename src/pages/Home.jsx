@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { me, logout } from "../api/auth";
+import { auth } from "@/lib/api/endpoints";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -11,7 +11,7 @@ const Home = () => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await me();
+        const data = await auth.me();
         if (cancelled) return;
         if (!data?.is_authenticated) {
           navigate("/login", { replace: true });
@@ -31,7 +31,7 @@ const Home = () => {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await auth.logout();
     } catch {
       // clear locally even if API fails
     }

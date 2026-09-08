@@ -725,8 +725,8 @@ export default function VisitorsPage() {
 
       <div className="overflow-hidden rounded-lg bg-white shadow-sm border border-gray-200">
         <div className="border-b border-gray-100 bg-white px-5 py-3 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 font-medium">Row Per Page</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-gray-500 font-medium whitespace-nowrap shrink-0">Rows Per Page</span>
             <RowPerPageSelect
               value={pageSize}
               onChange={(sz) => {
@@ -734,7 +734,7 @@ export default function VisitorsPage() {
                 setCurrentPage(1);
               }}
             />
-            <span className="text-gray-500 font-medium">Entries</span>
+            <span className="text-gray-500 font-medium whitespace-nowrap shrink-0">Entries</span>
           </div>
         </div>
         {list.length === 0 ? (

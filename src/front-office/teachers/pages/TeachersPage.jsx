@@ -871,10 +871,10 @@ export default function TeachersPage() {
         <div className="rounded-xl border border-[var(--ac-border)] bg-white overflow-hidden">
           {/* Table Header Controls */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ac-border)] p-4">
-            <div className="flex items-center gap-2 text-xs text-[var(--ac-muted)]">
-              <span>Row Per Page</span>
+            <div className="flex items-center gap-2 text-xs text-[var(--ac-muted)] shrink-0">
+              <span className="whitespace-nowrap shrink-0">Rows Per Page</span>
               <select
-                className="ac-select text-xs py-1 px-2.5 !w-16"
+                className="ac-select text-xs py-1 px-2.5 !w-16 shrink-0"
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));

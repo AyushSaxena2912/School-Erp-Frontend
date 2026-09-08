@@ -250,10 +250,10 @@ export function AcademicListShell({
 
         {/* Controls: page size + search */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ac-border)] bg-[#fafbfc] px-[18px] py-2.5">
-          <div className="flex items-center gap-2 text-[12px] text-[var(--ac-muted)]">
-            <span>Row Per Page</span>
+          <div className="flex items-center gap-2 text-[12px] text-[var(--ac-muted)] shrink-0">
+            <span className="whitespace-nowrap shrink-0">Rows Per Page</span>
             <select
-              className="ac-select"
+              className="ac-select !w-auto min-w-[4rem] py-1 px-2.5 shrink-0"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >
@@ -263,7 +263,7 @@ export function AcademicListShell({
                 </option>
               ))}
             </select>
-            <span>Entries</span>
+            <span className="whitespace-nowrap shrink-0">Entries</span>
           </div>
           <div className="flex items-center gap-[7px] rounded-[var(--ac-radius)] border border-[var(--ac-border)] bg-white px-3 py-1.5">
             <svg

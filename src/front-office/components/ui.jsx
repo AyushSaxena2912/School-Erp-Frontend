@@ -452,7 +452,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }) {
 
 export function RowPerPageSelect({ value, onChange }) {
   return (
-    <div className="relative inline-flex items-center">
+    <div className="relative inline-flex items-center shrink-0">
       <select
         className="appearance-none rounded-xl border border-gray-200 bg-white pl-4 pr-9 py-1.5 text-sm font-bold text-gray-800 outline-none hover:border-gray-300 focus:border-green-700 cursor-pointer shadow-none transition-colors"
         value={value}

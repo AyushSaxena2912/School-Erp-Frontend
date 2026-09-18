@@ -1,5 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+
+/** Menu width in px — kept in sync with the portal panel's `w-36` below. */
+const ROW_MENU_WIDTH = 144;
 
 export const btnPrimary = "ac-btn ac-btn-primary";
 export const btnSecondary = "ac-btn";
@@ -135,10 +139,54 @@ export function SortLabel({ children }) {
 
 export function RowMenu({ items }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const menuHeight = panelRef.current?.offsetHeight || items.length * 34 + 8;
+      const openUpward = window.innerHeight - rect.bottom < menuHeight + 8;
+      setPos({
+        top: openUpward ? rect.top - menuHeight - 4 : rect.bottom + 4,
+        left: rect.right - ROW_MENU_WIDTH,
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, items.length]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (
+        buttonRef.current?.contains(e.target) ||
+        panelRef.current?.contains(e.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
+
   return (
     <div className="relative flex justify-center">
       <button
         type="button"
+        ref={buttonRef}
         className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--ac-muted)] hover:bg-[#f4f6f8]"
         aria-label="Actions"
         onClick={() => setOpen((v) => !v)}
@@ -147,15 +195,13 @@ export function RowMenu({ items }) {
           <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
         </svg>
       </button>
-      {open ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-10 cursor-default"
-            aria-label="Close menu"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-[var(--ac-border)] bg-white py-1 shadow-md">
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-50 w-36 rounded-lg border border-[var(--ac-border)] bg-white py-1 shadow-md"
+            style={{ top: pos.top, left: pos.left }}
+          >
             {items.map((item) => (
               <button
                 key={item.label}
@@ -173,9 +219,9 @@ export function RowMenu({ items }) {
                 {item.label}
               </button>
             ))}
-          </div>
-        </>
-      ) : null}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

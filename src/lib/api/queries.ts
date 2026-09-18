@@ -410,6 +410,7 @@ export function useBranches() {
           "city",
           "state",
           "postal_code",
+          "principal_name",
         ],
         orderBy: "branch_name asc",
         limitPageLength: 0,

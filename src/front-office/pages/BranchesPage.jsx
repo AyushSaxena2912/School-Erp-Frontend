@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Building2, Camera, MoreVertical, Pencil, Trash2, Upload } from "lucide-react";
 import {
@@ -16,17 +17,43 @@ import {
   btnPrimary,
   btnSecondary,
   EmptyState,
+  PhoneInput,
 } from "../components/ui";
+
+/** Menu width in px — kept in sync with the portal panel's `w-32` below. */
+const BRANCH_MENU_WIDTH = 128;
 
 function BranchActionMenu({ branch, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
-  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({ top: rect.bottom + 4, left: rect.right - BRANCH_MENU_WIDTH });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     function handleClickOutside(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setOpen(false);
+      if (
+        buttonRef.current?.contains(e.target) ||
+        panelRef.current?.contains(e.target)
+      ) {
+        return;
       }
+      setOpen(false);
     }
     if (open) {
       document.addEventListener("mousedown", handleClickOutside);
@@ -37,9 +64,10 @@ function BranchActionMenu({ branch, onEdit, onDelete }) {
   }, [open]);
 
   return (
-    <div className="relative inline-block text-left" ref={menuRef}>
+    <div className="inline-block text-left">
       <button
         type="button"
+        ref={buttonRef}
         onClick={() => setOpen((prev) => !prev)}
         className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer"
         title="Actions"
@@ -47,32 +75,38 @@ function BranchActionMenu({ branch, onEdit, onDelete }) {
         <MoreVertical className="h-4 w-4" />
       </button>
 
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 w-32 origin-top-right rounded-lg border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer"
-            onClick={() => {
-              setOpen(false);
-              onEdit();
-            }}
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-50 w-32 origin-top-right rounded-lg border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none"
+            style={{ top: pos.top, left: pos.left }}
           >
-            <Pencil className="h-3.5 w-3.5 text-gray-500" />
-            <span>Edit</span>
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-            <span>Delete</span>
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer"
+              onClick={() => {
+                setOpen(false);
+                onEdit();
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5 text-gray-500" />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              <span>Delete</span>
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -120,6 +154,7 @@ export default function BranchesPage() {
     () => ({
       name: profile?.school_name || "",
       affiliationNumber: profile?.affiliation_number || "",
+      establishedYear: profile?.established_year || "",
       email: profile?.email || "",
       phone: profile?.contact_number || "",
       website: profile?.website || "",
@@ -131,17 +166,21 @@ export default function BranchesPage() {
     [profile],
   );
 
-  const updateSchoolProfile = (values) =>
-    updateProfile.mutate({
-      school_name: values.name,
-      affiliation_number: values.affiliationNumber,
-      email: values.email,
-      contact_number: values.phone,
-      website: values.website,
-      address_line: values.address,
-      city: values.city,
-      state: values.state,
-    });
+  const updateSchoolProfile = (values, options) =>
+    updateProfile.mutate(
+      {
+        school_name: values.name,
+        affiliation_number: values.affiliationNumber,
+        established_year: values.establishedYear,
+        email: values.email,
+        contact_number: values.phone,
+        website: values.website,
+        address_line: values.address,
+        city: values.city,
+        state: values.state,
+      },
+      options,
+    );
 
   const updateBranch = ({ id, ...form }) =>
     updateBranchMutation.mutate({
@@ -247,19 +286,26 @@ export default function BranchesPage() {
       setProfileError("Primary contact email is required.");
       return;
     }
-    updateSchoolProfile({
-      ...profileForm,
-      name: profileForm.name.trim(),
-      affiliationCode: (profileForm.affiliationCode || "").trim(),
-      phone: profileForm.phone.trim(),
-      email: profileForm.email.trim(),
-      website: (profileForm.website || "").trim(),
-      establishedYear: (profileForm.establishedYear || "").trim(),
-      address: (profileForm.address || "").trim(),
-      logo: normalizeProfileLogo(profileForm.logo),
-    });
-    setProfileMessage("School profile updated successfully.");
-    setTimeout(() => setProfileMessage(""), 3000);
+    updateSchoolProfile(
+      {
+        ...profileForm,
+        name: profileForm.name.trim(),
+        affiliationNumber: (profileForm.affiliationNumber || "").trim(),
+        establishedYear: (profileForm.establishedYear || "").trim(),
+        phone: profileForm.phone.trim(),
+        email: profileForm.email.trim(),
+        website: (profileForm.website || "").trim(),
+        address: (profileForm.address || "").trim(),
+        logo: normalizeProfileLogo(profileForm.logo),
+      },
+      {
+        onSuccess: () => {
+          setProfileMessage("School profile updated successfully.");
+          setTimeout(() => setProfileMessage(""), 3000);
+          setSearchParams({}, { replace: true });
+        },
+      },
+    );
   };
 
   const handleDeleteBranch = (id, name) => {
@@ -541,11 +587,11 @@ export default function BranchesPage() {
                   <input
                     type="text"
                     className={inputClass}
-                    value={profileForm.affiliationCode}
+                    value={profileForm.affiliationNumber || ""}
                     onChange={(e) =>
                       setProfileForm((p) => ({
                         ...p,
-                        affiliationCode: e.target.value,
+                        affiliationNumber: e.target.value,
                       }))
                     }
                     placeholder="e.g. CBSE-123456"
@@ -576,12 +622,10 @@ export default function BranchesPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Primary contact phone" required>
-                  <input
-                    type="text"
-                    className={inputClass}
+                  <PhoneInput
                     value={profileForm.phone}
-                    onChange={(e) =>
-                      setProfileForm((p) => ({ ...p, phone: e.target.value }))
+                    onChange={(val) =>
+                      setProfileForm((p) => ({ ...p, phone: val }))
                     }
                     placeholder="Phone number"
                   />

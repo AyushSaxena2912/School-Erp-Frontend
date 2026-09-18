@@ -43,6 +43,7 @@ export interface AdmissionEnquiryCustomValue {
 	idx?: number;
 	/** Field */
 	field_key: string /* -> Admission Form Field */;
+	/** Long Text, not Small Text: the legacy custom_fields blob held whole request bodies, including base64 document uploads that exceed the 64KB text limit. */
 	value?: string;
 }
 
@@ -107,6 +108,7 @@ export interface SchoolProfile {
 	modified_by?: string;
 	school_name: string;
 	affiliation_number?: string;
+	established_year?: string;
 	contact_number?: string;
 	email?: string;
 	website?: string;

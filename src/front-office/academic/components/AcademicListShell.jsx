@@ -242,6 +242,9 @@ export function AcademicListShell({
   page,
   onPageChange,
   total,
+  selectedCount = 0,
+  onDeleteSelected,
+  onClearSelection,
   children,
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
@@ -334,6 +337,30 @@ export function AcademicListShell({
             />
           </div>
         </div>
+
+        {selectedCount > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ac-border)] bg-[var(--ac-green-light)] px-[18px] py-2.5">
+            <span className="text-[12.5px] font-medium text-[var(--ac-text)]">
+              {selectedCount} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="ac-toolbar-btn"
+                onClick={onClearSelection}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-[var(--ac-radius)] bg-[var(--ac-danger)] px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90"
+                onClick={onDeleteSelected}
+              >
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="overflow-x-auto">{children}</div>
 

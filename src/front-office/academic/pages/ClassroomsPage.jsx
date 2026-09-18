@@ -63,6 +63,7 @@ function usePagedList(rows) {
     total,
     pageRows,
     selected,
+    setSelected,
     typeFilter,
     setTypeFilter: (v) => {
       setTypeFilter(v);
@@ -199,6 +200,19 @@ export default function ClassroomsPage() {
     reader.readAsText(file);
   };
 
+  const handleDeleteSelected = () => {
+    const count = list.selected.length;
+    if (count === 0) return;
+    if (
+      window.confirm(
+        `Delete ${count} selected room${count > 1 ? "s" : ""}?`
+      )
+    ) {
+      list.selected.forEach((id) => deleteRoom(id));
+      list.setSelected([]);
+    }
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -253,6 +267,9 @@ export default function ClassroomsPage() {
         page={list.page}
         onPageChange={list.setPage}
         total={list.total}
+        selectedCount={list.selected.length}
+        onDeleteSelected={handleDeleteSelected}
+        onClearSelection={() => list.setSelected([])}
       >
         <table className="ac-table">
           <thead>

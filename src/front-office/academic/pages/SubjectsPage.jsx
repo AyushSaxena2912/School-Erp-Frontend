@@ -69,6 +69,7 @@ function usePagedList(rows) {
     total,
     pageRows,
     selected,
+    setSelected,
     statusFilter,
     setStatusFilter: (v) => {
       setStatusFilter(v);
@@ -212,6 +213,19 @@ export default function SubjectsPage() {
     reader.readAsText(file);
   };
 
+  const handleDeleteSelected = () => {
+    const count = list.selected.length;
+    if (count === 0) return;
+    if (
+      window.confirm(
+        `Delete ${count} selected subject${count > 1 ? "s" : ""}?`
+      )
+    ) {
+      list.selected.forEach((id) => deleteSubject(id));
+      list.setSelected([]);
+    }
+  };
+
   return (
     <div className="academic-page">
       <AcademicListShell
@@ -266,6 +280,9 @@ export default function SubjectsPage() {
         page={list.page}
         onPageChange={list.setPage}
         total={list.total}
+        selectedCount={list.selected.length}
+        onDeleteSelected={handleDeleteSelected}
+        onClearSelection={() => list.setSelected([])}
       >
         <table className="ac-table">
           <thead>

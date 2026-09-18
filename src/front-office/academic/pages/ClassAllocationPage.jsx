@@ -236,6 +236,19 @@ export default function ClassAllocationPage() {
     setModalOpen(true);
   };
 
+  const handleDeleteSelected = () => {
+    const count = selected.length;
+    if (count === 0) return;
+    if (
+      window.confirm(
+        `Delete ${count} selected mapping${count > 1 ? "s" : ""}?`
+      )
+    ) {
+      selected.forEach((id) => deleteMapping(id));
+      setSelected([]);
+    }
+  };
+
   const save = (e) => {
     e.preventDefault();
     if (!form.classId || !form.sectionId) {
@@ -367,6 +380,9 @@ export default function ClassAllocationPage() {
         page={safePage}
         onPageChange={setPage}
         total={total}
+        selectedCount={selected.length}
+        onDeleteSelected={handleDeleteSelected}
+        onClearSelection={() => setSelected([])}
       >
         <table className="ac-table">
           <thead>

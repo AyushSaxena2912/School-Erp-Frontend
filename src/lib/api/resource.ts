@@ -6,7 +6,7 @@
  * method endpoint when the operation has a name beyond create/read/update/delete.
  */
 
-import { callMethod, http, toQueryString } from "./client";
+import { http, toQueryString } from "./client";
 import type { DocTypeName } from "@/types/generated/doctypes";
 
 /** Frappe filter operators. */
@@ -55,12 +55,22 @@ export function list<T>(doctype: DocTypeName, params: ListParams<T> = {}): Promi
   return http.get<T[]>(`${path(doctype)}${toQueryString(encode(params))}`);
 }
 
-export function count<T>(doctype: DocTypeName, filters?: Filter[]): Promise<number> {
-  return callMethod<number>(
-    "frappe.client.get_count",
-    { doctype, filters: filters?.length ? filters : undefined },
-    "GET",
-  );
+/**
+ * Total matching row count.
+ *
+ * Deliberately not `frappe.client.get_count` — that generic RPC method is
+ * blocked by the whitelist on some deployed Frappe versions (older releases
+ * reject it outright, regardless of auth). `/api/resource` is the one count
+ * path the framework's own REST routing always serves, since it calls the
+ * underlying query builder directly rather than through the whitelist gate.
+ */
+export async function count(doctype: DocTypeName, filters?: Filter[]): Promise<number> {
+  const query = toQueryString({
+    fields: [{ COUNT: "*" }],
+    filters: filters?.length ? filters : undefined,
+  });
+  const [row] = await http.get<[{ "COUNT(*)": number }]>(`${path(doctype)}${query}`);
+  return row?.["COUNT(*)"] ?? 0;
 }
 
 /** A page of rows plus the total, for paginated tables. */
@@ -70,7 +80,7 @@ export async function listPage<T>(
 ): Promise<{ items: T[]; totalCount: number }> {
   const [items, totalCount] = await Promise.all([
     list<T>(doctype, params),
-    count<T>(doctype, params.filters),
+    count(doctype, params.filters),
   ]);
   return { items, totalCount };
 }

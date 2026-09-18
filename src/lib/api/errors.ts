@@ -94,12 +94,27 @@ function exceptionMessage(payload: any): string | null {
   return tail || null;
 }
 
+/**
+ * Some framework-level exceptions (e.g. a bare `AuthenticationError` from a
+ * failed login) skip `frappe.throw()` entirely and just set a plain string on
+ * `message` — no `_server_messages`, no colon in `exception` for
+ * `exceptionMessage` to split on. Fall back to it last, since on a successful
+ * response `message` holds the actual return value rather than user-facing text.
+ */
+function topLevelMessage(payload: any): string | null {
+  const raw = payload?.message;
+  return typeof raw === "string" && raw ? raw : null;
+}
+
 export function toApiError(status: number, payload: unknown): ApiError {
   // A 500 may carry an internal message; never surface it.
   const message =
     status >= 500
       ? GENERIC_MESSAGE
-      : serverMessage(payload) ?? exceptionMessage(payload) ?? GENERIC_MESSAGE;
+      : serverMessage(payload) ??
+        exceptionMessage(payload) ??
+        topLevelMessage(payload) ??
+        GENERIC_MESSAGE;
 
   return new ApiError(status, message, payload);
 }

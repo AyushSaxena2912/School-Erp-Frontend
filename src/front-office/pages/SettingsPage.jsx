@@ -128,6 +128,15 @@ export default function SettingsPage() {
   // from here; changing them is a schema change, not configuration.
   const systemFields = [];
 
+  const activeCustomFields = useMemo(
+    () => customFields.filter((f) => f.active !== false),
+    [customFields],
+  );
+  const deactivatedCustomFields = useMemo(
+    () => customFields.filter((f) => f.active === false),
+    [customFields],
+  );
+
   const toRecord = (payload) => ({
     label: payload.label,
     fieldtype: UI_TO_TYPE[payload.type] || "Data",
@@ -217,6 +226,54 @@ export default function SettingsPage() {
     setFieldModal(false);
   };
 
+  const renderCustomField = (f) => (
+    <li
+      key={f.id}
+      className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
+        f.active === false
+          ? "border-gray-200 bg-gray-50 opacity-60"
+          : "border-gray-200 bg-white"
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="font-medium text-gray-900">
+          {f.label}
+          {f.required ? <span className="text-red-500"> *</span> : null}
+        </p>
+        <p className="text-xs text-gray-500">
+          {f.type}
+          {f.type === "Dropdown" ? ` · ${(f.options || []).join(", ")}` : ""}
+          {f.active === false ? " · Deactivated" : ""}
+        </p>
+      </div>
+      <FieldActionsMenu
+        items={[
+          {
+            label: "Edit",
+            onClick: () => openEditField(f),
+          },
+          {
+            label: f.active === false ? "Activate" : "Deactivate",
+            onClick: () =>
+              updateCustomField({
+                id: f.id,
+                active: f.active === false,
+              }),
+          },
+          {
+            label: "Delete",
+            danger: true,
+            onClick: () => {
+              if (window.confirm(`Delete custom field "${f.label}"?`)) {
+                deleteCustomField(f.id);
+              }
+            },
+          },
+        ]}
+      />
+    </li>
+  );
+
   if (isLoading) {
     return <div className="p-6 text-sm text-gray-500">Loading settings…</div>;
   }
@@ -302,71 +359,27 @@ export default function SettingsPage() {
 
         <div>
           <p className="mb-2 text-xs font-semibold uppercase text-gray-400">
-            Custom fields
+            Custom fields · Active
           </p>
-          {customFields.length === 0 ? (
-            <EmptyState message="No custom fields yet. Add one to extend the enquiry form." />
+          {activeCustomFields.length === 0 ? (
+            <EmptyState message="No active custom fields yet. Add one to extend the enquiry form." />
           ) : (
             <ul className="space-y-2">
-              {customFields.map((f) => (
-                <li
-                  key={f.id}
-                  className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
-                    f.active === false
-                      ? "border-gray-200 bg-gray-50 opacity-60"
-                      : "border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900">
-                      {f.label}
-                      {f.required ? (
-                        <span className="text-red-500"> *</span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {f.type}
-                      {f.type === "Dropdown"
-                        ? ` · ${(f.options || []).join(", ")}`
-                        : ""}
-                      {f.active === false ? " · Deactivated" : ""}
-                    </p>
-                  </div>
-                  <FieldActionsMenu
-                    items={[
-                      {
-                        label: "Edit",
-                        onClick: () => openEditField(f),
-                      },
-                      {
-                        label:
-                          f.active === false ? "Activate" : "Deactivate",
-                        onClick: () =>
-                          updateCustomField({
-                            id: f.id,
-                            active: f.active === false,
-                          }),
-                      },
-                      {
-                        label: "Delete",
-                        danger: true,
-                        onClick: () => {
-                          if (
-                            window.confirm(
-                              `Delete custom field "${f.label}"?`
-                            )
-                          ) {
-                            deleteCustomField(f.id);
-                          }
-                        },
-                      },
-                    ]}
-                  />
-                </li>
-              ))}
+              {activeCustomFields.map((f) => renderCustomField(f))}
             </ul>
           )}
         </div>
+
+        {deactivatedCustomFields.length > 0 ? (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-400">
+              Custom fields · Deactivated
+            </p>
+            <ul className="space-y-2">
+              {deactivatedCustomFields.map((f) => renderCustomField(f))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       <Modal
